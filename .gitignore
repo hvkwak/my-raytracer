@@ -1,0 +1,7 @@
+build/*
+external/*
+scenes/*
+src/*
+.cache/*
+README_.md
+compile_commands.json

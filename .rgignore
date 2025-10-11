@@ -1,0 +1,9 @@
+build/*
+scenes/*
+outputs/*
+.cache/*
+.git/*
+external/*
+README_.md
+CMakeLists.txt
+compile_commands.json
