@@ -15,7 +15,7 @@ This repo contains my own implementation files for the exercises of the course *
   - [x] Phong shading model (Ambient + Diffuse + Specular terms): *local* illumination
   - [x] Adding shadow term to Phong shading model
   - [x] Recursive ray-tracing for reflections: *global* illumination effect
-- [ ] Ray-plane intersection computation (`Plane::intersect()` in `Plane.cpp`).
+- [x] Ray-plane intersection computation (`Plane::intersect()` in `Plane.cpp`).
 - [ ] Ray Tracing with Triangular Meshes: Ray-triangle intersection computation (`Mesh::intersect_triangle()` in `Mesh.cpp`).
   - [ ] Computation of vertex normals (`Mesh::compute_normals` in `Mesh.cpp`) 
   - [ ] Computation of weighted vertex normals

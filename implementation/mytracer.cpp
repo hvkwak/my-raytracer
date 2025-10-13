@@ -4,9 +4,59 @@
 // License: MIT (for this file only)
 
 #include <algorithm>
+#include "Plane.h"
 #include "Raytracer.h"
 #include "utils/vec3.h"
 #include "utils/Material.h"
+
+//-----------------------------------------------------------------------------
+/**
+ * @brief returns whether the incoming ray intersect the Plane
+ *
+ * @param ray: incoming ray
+ *        intersection point: point where ray reaches the plane
+ *        intersection_normal: normal at the intersection (normal of plane)
+ *        intersection_diffuse: diffuse term from the material of Plane
+ *        intersection_distance: distance from ray origin to intersection point
+ * @return
+ */
+bool Plane::intersect(const Ray& ray, vec3& intersection_point,
+                      vec3& intersection_normal, vec3& intersection_diffuse,
+                      double& intersection_distance) const
+{
+    intersection_diffuse = material_.diffuse;
+
+    /** \todo
+     * - compute the intersection of the plane with `ray`
+     * OK - if ray and plane are parallel there is no intersection
+     * OK - otherwise compute intersection data and store it in `intersection_point`, `intersection_normal`, and `intersection_distance`.
+     * OK - return whether there is an intersection for t>1e-5 (avoids "shadow acne").
+     */
+    // returns no intersection, if ray and plane are parallel.
+    const double epsilon = 1e-9;
+    const double cosTheta = dot(normal_, ray.direction_);
+    const bool isParallel = std::abs(cosTheta) < epsilon;
+    if (isParallel){
+        return false;
+    }
+
+    // compute intersection data
+    double distance = dot(normal_, center_);
+    double t = distance - (normal_[0]*ray.origin_[0] + normal_[1]*ray.origin_[1] + normal_[2]*ray.origin_[2]);
+    t /= (normal_[0]*ray.direction_[0] + normal_[1]*ray.direction_[1] + normal_[2]*ray.direction_[2]);
+
+    // and store it in reference parameters
+    // return whether there's an intersection for t>1e-5 to avoid shadow acne.
+    if (t > 1e-5){
+        intersection_point = ray(t);
+        intersection_distance = t;
+        intersection_normal = normal_;
+        return true;
+    }
+
+    return false;
+}
+//=============================================================================
 
 /**
  * @brief returns diffuse term
@@ -106,7 +156,7 @@ vec3 Raytracer::lighting(const vec3 &point, const vec3 &normal,
     double dot_rv = reflection(point, normal, view, light);
     double reflection_ = 1.0;
     // TODO: exponent could be optional here to control shininess
-    for (int i = 0; i < 20; i++){
+    for (int i = 0; i < 80; i++){
       reflection_ *= dot_rv;
     }
 
