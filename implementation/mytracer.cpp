@@ -106,7 +106,7 @@ vec3 Raytracer::lighting(const vec3 &point, const vec3 &normal,
     double dot_rv = reflection(point, normal, view, light);
     double reflection_ = 1.0;
     // TODO: exponent could be optional here to control shininess
-    for (int i = 0; i < 80; i++){
+    for (int i = 0; i < 20; i++){
       reflection_ *= dot_rv;
     }
 
