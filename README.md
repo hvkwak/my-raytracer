@@ -9,12 +9,13 @@ Personal implementations for the *Computer Graphics (Graphische Datenverarbeitun
 
 ## Installation
 1. Obtain the official exercise codebase from the course.
-2. Clone this repository into the codebase **root**.
-3. Build and run following the codebase’s original `README.md`.
+2. Clone this repository into the codebase **project root**.
+3. Build and run following the codebase’s `README.md`.
 
 ## Outputs
 Below are some of the results, which can be found in the [outputs](outputs/).
 
+<!--
 Phong lighting model and reflections with spheres `o_01_spheres.png`.
 <div style="display: inline-block; vertical-align: top;">
     <img src="outputs/o_01_spheres.png" alt="o_01_spheres.png" width="250"><br>
@@ -24,6 +25,8 @@ Phong lighting model and reflections with spheres `o_01_spheres.png`.
 Ray tracing with triangle meshes(flat shading):  `o_05_cube.png`, `o_08_office.png`, `o_07_toon_faces.png`
 
 Ray tracing with texture support: `o_10_pokemon.png`
+--->
+
 
 <!-------
 <h2>Outputs</h2>

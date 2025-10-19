@@ -38,8 +38,9 @@ double Raytracer::reflection(const vec3 &point, const vec3 &normal, const vec3 &
     double cosTheta = dot(ray_reflected, view);
     cosTheta = std::max(0.0, cosTheta);
     return cosTheta;
+  } else {
+    return 0.0;
   }
-  return 0.0;
 }
 
 /**
@@ -54,22 +55,20 @@ double Raytracer::reflection(const vec3 &point, const vec3 &normal, const vec3 &
 vec3 Raytracer::subtrace(const Ray &ray, const Material &material, const vec3 &point, const vec3 &normal, const int depth){
 
   /** \todo in trace() @ Raytracer.cpp */
-
-  // if (material.mirror > 0.0){
-
-  // }
-  // generate reflected ray using normal, point, and ray.direction
-  // vec3 v = mirror(-ray.direction_, normal);
-  vec3 v = reflect(ray.direction_, normal);
-  const double epsilon = 1e-4; // small offset to avoid self-intersection
-  Ray ray_ = Ray(point + epsilon * v, v);
-  return material.mirror * trace(ray_, depth + 1);
-  //return {0, 0, 0};
+  if (material.mirror > 0.0){
+    // generate reflected ray using normal, point, and ray.direction
+    // vec3 v = mirror(-ray.direction_, normal);
+    vec3 v = reflect(ray.direction_, normal);
+    const double epsilon = 1e-4; // small offset to avoid self-intersection
+    Ray ray_ = Ray(point + epsilon * v, v);
+    return material.mirror * trace(ray_, depth + 1);
+  }
+  return {0, 0, 0};
 }
 
 /**
  * @brief Computes Phong lighting model (ambient + diffuse + specular) at a
- *        surface point
+ *        surface point (local illumination)
  * @param point: intersection point
  *        normal: intersection normal
  *        view: ray from intersection point to pixel
@@ -110,9 +109,10 @@ vec3 Raytracer::lighting(const vec3 &point, const vec3 &normal,
     double shadow_t;
     vec3 light_direction = normalize(light.position - point);
     double light_distance = norm(light.position - point);
+
     Ray shadow_ray = Ray(point + epsilon * light_direction, light_direction);
-    bool isShadow = intersect_scene(shadow_ray, shadow_material, shadow_point, shadow_normal, shadow_t);
-    isShadow = isShadow && shadow_t < light_distance && 0.0 < shadow_t;
+    bool isIntersect = intersect_scene(shadow_ray, shadow_material, shadow_point, shadow_normal, shadow_t);
+    bool isShadow = isIntersect && shadow_t < light_distance && 0.0 < shadow_t;
 
     color[0] += light.color[0] * !isShadow * (material.diffuse[0] * diffuse_ + material.specular[0] * reflection_);
     color[1] += light.color[1] * !isShadow * (material.diffuse[1] * diffuse_ + material.specular[1] * reflection_);

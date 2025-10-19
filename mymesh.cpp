@@ -24,67 +24,61 @@
  */
 bool Mesh::intersect_bounding_box(const Ray &ray) const {
 
-  return true;
-  // /** \todo in Mesh.cpp*/
+  // get 6 planes and their parameters
+  vec3 vec_x = (vec3(bb_max_[0] - bb_min_[0], 0.0, 0.0));
+  vec3 vec_y = (vec3(0.0, bb_max_[1] - bb_min_[1], 0.0));
+  vec3 vec_z = (vec3(0.0, 0.0, bb_max_[2] - bb_min_[2]));
 
-  // vec3 vec_x = (vec3(bb_max_[0] - bb_min_[0], 0.0, 0.0));
-  // vec3 vec_y = (vec3(0.0, bb_max_[1] - bb_min_[1], 0.0));
-  // vec3 vec_z = (vec3(0.0, 0.0, bb_max_[2] - bb_min_[2]));
+  vec3 center1 = bb_min_ + vec_x/2.0 + vec_y/2.0;
+  vec3 center2 = bb_min_ + vec_y/2.0 + vec_z/2.0;
+  vec3 center3 = bb_min_ + vec_z/2.0 + vec_x/2.0;
+  vec3 center4 = bb_min_ + vec_z + vec_x/2.0 + vec_y/2.0;
+  vec3 center5 = bb_min_ + vec_x + vec_y/2.0 + vec_z/2.0;
+  vec3 center6 = bb_min_ + vec_y + vec_z/2.0 + vec_x/2.0;
 
-  // vec3 center1 = bb_min_ + vec_x/2.0 + vec_y/2.0;
-  // vec3 center2 = bb_min_ + vec_y/2.0 + vec_z/2.0;
-  // vec3 center3 = bb_min_ + vec_z/2.0 + vec_x/2.0;
-  // vec3 center4 = bb_min_ + vec_z + vec_x/2.0 + vec_y/2.0;
-  // vec3 center5 = bb_min_ + vec_x + vec_y/2.0 + vec_z/2.0;
-  // vec3 center6 = bb_min_ + vec_y + vec_z/2.0 + vec_x/2.0;
+  vec3 normal1 = normalize(cross(vec_x, vec_y));
+  vec3 normal2 = normalize(cross(vec_y, vec_z));
+  vec3 normal3 = normalize(cross(vec_z, vec_x));
+  vec3 normal4 = normalize(cross(vec_y, vec_x));
+  vec3 normal5 = normalize(cross(vec_z, vec_y));
+  vec3 normal6 = normalize(cross(vec_x, vec_z));
 
-  // vec3 normal1 = normalize(cross(vec_x, vec_y));
-  // vec3 normal2 = normalize(cross(vec_y, vec_z));
-  // vec3 normal3 = normalize(cross(vec_z, vec_x));
-  // vec3 normal4 = normalize(cross(vec_y, vec_x));
-  // vec3 normal5 = normalize(cross(vec_z, vec_y));
-  // vec3 normal6 = normalize(cross(vec_x, vec_z));
+  Plane plane1(center1, normal1);
+  Plane plane2(center2, normal2);
+  Plane plane3(center3, normal3);
+  Plane plane4(center4, normal4);
+  Plane plane5(center5, normal5);
+  Plane plane6(center6, normal6);
+  std::vector<Plane> planes = {plane1, plane2, plane3, plane4, plane5, plane6};
 
-  // Plane plane1(center1, normal1);
-  // Plane plane2(center2, normal2);
-  // Plane plane3(center3, normal3);
-  // Plane plane4(center4, normal4);
-  // Plane plane5(center5, normal5);
-  // Plane plane6(center6, normal6);
-  // std::vector<Plane> planes = {plane1, plane2, plane3, plane4, plane5,
-  // plane6};
+  const double epsilon = 1e-9;
+  for (Plane &plane : planes) {
 
-  // const double epsilon = 1e-9;
-  // for (Plane &plane : planes) {
+    // check if parallel
+    double cosTheta = dot(plane.normal_, ray.direction_);
+    bool isParallel = std::abs(cosTheta) < epsilon;
+    if (isParallel) {
+      continue;
+    }
 
-  //   // check if parallel
-  //   double cosTheta = dot(plane.normal_, ray.direction_);
-  //   bool isParallel = std::abs(cosTheta) < epsilon;
-  //   if (isParallel) {
-  //     continue;
-  //   }
+    // compute intersection of ray point on plane
+    double distance = dot(plane.normal_, plane.center_); // distance from origin
+    double t = distance - (plane.normal_[0] * ray.origin_[0] + plane.normal_[1] * ray.origin_[1] + plane.normal_[2] * ray.origin_[2]);
+    t /= (plane.normal_[0] * ray.direction_[0] + plane.normal_[1] *
+    ray.direction_[1] + plane.normal_[2] * ray.direction_[2]);
 
-  //   // compute intersection of ray point on plane
-  //   double distance = dot(plane.normal_, plane.center_); // distance from
-  //   origin double t = distance - (plane.normal_[0] * ray.origin_[0] +
-  //   plane.normal_[1] * ray.origin_[1] + plane.normal_[2] * ray.origin_[2]);
-  //   t /= (plane.normal_[0] * ray.direction_[0] + plane.normal_[1] *
-  //   ray.direction_[1] + plane.normal_[2] * ray.direction_[2]);
-
-  //   if (t > 1e-5) {
-  //     // possible intersectioni poin, check if it is within range
-  //     vec3 point = ray(t);
-  //     bool isX = bb_min_[0] <= point[0] && point[0] <= bb_max_[0];
-  //     bool isY = bb_min_[1] <= point[1] && point[1] <= bb_max_[1];
-  //     bool isZ = bb_min_[2] <= point[2] && point[2] <= bb_max_[2];
-  //     if (isX && isY && isZ) {
-  //       return true;
-  //     }
-  //   }
-  // }
-  // return false;
-
-  // return true;
+    if (t > 1e-5) {
+      // possible intersectioni poin, check if it is within range
+      vec3 point = ray(t);
+      bool isX = bb_min_[0] <= point[0] && point[0] <= bb_max_[0];
+      bool isY = bb_min_[1] <= point[1] && point[1] <= bb_max_[1];
+      bool isZ = bb_min_[2] <= point[2] && point[2] <= bb_max_[2];
+      if (isX && isY && isZ) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 //-----------------------------------------------------------------------------
@@ -233,16 +227,14 @@ bool Mesh::intersect_triangle(const Triangle &triangle, const Ray &ray,
   // [ p0.z - p2.z   p1.z - p2.z   -d.z ] [t]   [ray.origin.z]
   const vec3 column1 = {p0[0] - p2[0], p0[1] - p2[1], p0[2] - p2[2]};
   const vec3 column2 = {p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]};
-  const vec3 column3 = {-ray.direction_[0], -ray.direction_[1],
-                        -ray.direction_[2]};
-  const vec3 column4 = {ray.origin_[0] - p2[0], ray.origin_[1] - p2[1],
-                        ray.origin_[2] - p2[2]};
+  const vec3 column3 = {-ray.direction_[0], -ray.direction_[1], -ray.direction_[2]};
+  const vec3 column4 = {ray.origin_[0] - p2[0], ray.origin_[1] - p2[1], ray.origin_[2] - p2[2]};
   const double S = det3D(column1, column2, column3);
   const double alpha = det3D(column4, column2, column3) / S;
   const double beta = det3D(column1, column4, column3) / S;
   const double gamma = (1.0 - alpha - beta);
-  const double eps_shadow_acne =
-      1e-5; // TODO: more eps values for barycentric coordiantes?
+  const double eps_shadow_acne = 1e-5;
+  // TODO: more eps values for barycentric coordiantes?
 
   // check if t is correct: positive && beyond shadow acne
   const double t = det3D(column1, column2, column4) / S;
@@ -261,6 +253,7 @@ bool Mesh::intersect_triangle(const Triangle &triangle, const Ray &ray,
   intersection_distance = t;
   intersection_point = ray(t);
 
+  // get Texture if it's there.
   if (hasTexture_)
     compute_texture(triangle.iuv0, triangle.iuv1, triangle.iuv2,
                     intersection_diffuse, alpha, beta, gamma);
