@@ -16,7 +16,7 @@ Personal implementations of the ray tracing exercises for the *Computer Graphics
 Below is a subset of the results that can be found in the [outputs](outputs/).
 <table>
   <tr>
-    <th colspan="3" align="center">Ray tracing with Phong Lighitng</th>
+    <th colspan="3" align="left">Ray tracing with Phong Lighitng</th>
   </tr>
   <tr>
     <td align="center">
@@ -33,7 +33,7 @@ Below is a subset of the results that can be found in the [outputs](outputs/).
     </td>
   </tr>
   <tr>
-    <th colspan="3" align="center">Ray tracing with triangle meshes(Flat or Phong shading)</th>
+    <th colspan="3" align="left">Ray tracing with triangle meshes</th>
   </tr>
   <tr>
     <td align="center">
@@ -50,7 +50,7 @@ Below is a subset of the results that can be found in the [outputs](outputs/).
     </td>
   </tr>
   <tr>
-    <th colspan="3" align="center">Ray tracing with textures</th>
+    <th colspan="3" align="left">Ray tracing with textures</th>
   </tr>
   <tr>
     <td align="center">
