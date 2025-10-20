@@ -1,27 +1,68 @@
 # My Ray Tracer
-Personal implementations for the *Computer Graphics (Graphische Datenverarbeitung)* course exercises at the Computer Graphics Group, TU Dortmund.
+Personal implementations of the ray tracing exercises for the *Computer Graphics (Graphische Datenverarbeitung)* course at the Computer Graphics Group, TU Dortmund.
 
 ## Note
-⚠️ The official exercise codebase is **copyrighted by the Computer Graphics Group, TU Dortmund** and is **not included** in this repository.
+⚠️ The official exercise codebase is **copyrighted** by the **Computer Graphics Group, TU Dortmund** and **is not included** in this repository.
 
 ## Updates
-- [2025-10-17] Implemented basic TODOs across the course exercises (ray–plane/triangle intersections, weighted vertex normals, reflections, textures) for ray-tracing..
+- [2025-10-20] Implemented all TODOs in the course exercises (Phong lighting model, reflections, intersections, flat and Phong shading, textures, acceleration with axis-aligned bounding box (AABB) tests) for ray tracing.
 
 ## Installation
 1. Obtain the official exercise codebase from the course.
-2. Clone this repository into the codebase **project root**.
-3. Build and run following the codebase’s `README.md`.
+2. Clone this repository into the codebase’s project root.
+3. Build and run following the instructions in the codebase’s `README.md`.
 
 ## Outputs
 Below is a subset of the results that can be found in the [outputs](outputs/).
-
-Ray tracing with Phong Lighitng: `o_01_spheres.png`, `o_03_mirror.png`
-
-Ray tracing with triangle meshes(flat shading):  `o_05_cube.png`, `o_08_office.png`, `o_07_toon_faces.png`
-
-Ray tracing with weighted vertex normals: `o_09_rings.png`
-
-Ray tracing with texture support: `o_10_pokemon.png`
+<table>
+  <tr>
+    <th colspan="3" align="center">Ray tracing with Phong Lighitng</th>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="outputs/o_01_spheres.png"><img src="outputs/o_01_spheres.png" alt="spheres" width="320"></a><br>
+      <sub>o_01_spheres.png</sub>
+    </td>
+    <td align="center">
+      <a href="outputs/o_04_molecule.png"><img src="outputs/o_04_molecule.png" alt="molecule" width="320"></a><br>
+      <sub>o_04_molecule.png</sub>
+    </td>
+    <td align="center">
+      <a href="outputs/o_03_mirror.png"><img src="outputs/o_03_mirror.png" alt="mirror" width="320"></a><br>
+      <sub>o_03_mirror.png</sub>
+    </td>
+  </tr>
+  <tr>
+    <th colspan="3" align="center">Ray tracing with triangle meshes(Flat or Phong shading)</th>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="outputs/o_09_rings.png"><img src="outputs/o_09_rings.png" alt="rings" width="320"></a><br>
+      <sub>o_09_rings.png</sub>
+    </td>
+    <td align="center">
+      <a href="outputs/o_08_office.png"><img src="outputs/o_08_office.png" alt="office" width="320"></a><br>
+      <sub>o_08_office.png</sub>
+    </td>
+    <td align="center">
+      <a href="outputs/o_07_toon_faces.png"><img src="outputs/o_07_toon_faces.png" alt="molecule" width="320"></a><br>
+      <sub>o_07_toon_faces.png</sub>
+    </td>
+  </tr>
+  <tr>
+    <th colspan="3" align="center">Ray tracing with textures</th>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="outputs/o_10_pokemon.png"><img src="outputs/o_10_pokemon.png" alt="pokemon" width="320"></a><br>
+      <sub>o_10_pokemon.png</sub>
+    </td>
+    <td align="center">
+    </td>
+    <td align="center">
+    </td>
+  </tr>
+</table>
 <!--
 Phong lighting model and reflections with spheres `o_01_spheres.png`.
 <div style="display: inline-block; vertical-align: top;">
@@ -29,8 +70,6 @@ Phong lighting model and reflections with spheres `o_01_spheres.png`.
     <strong>Phong Lighting Model for spheres</strong><br>
   </div>
 --->
-
-
 <!-------
 <h2>Outputs</h2>
 Below is a subset of the results that can be found in the [outputs](outputs/).
