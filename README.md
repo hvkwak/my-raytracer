@@ -13,23 +13,27 @@ Personal implementations for the *Computer Graphics (Graphische Datenverarbeitun
 3. Build and run following the codebase’s `README.md`.
 
 ## Outputs
-Below are some of the results, which can be found in the [outputs](outputs/).
+Below is a subset of the results that can be found in the [outputs](outputs/).
 
+Ray tracing with Phong Lighitng: `o_01_spheres.png`, `o_03_mirror.png`
+
+Ray tracing with triangle meshes(flat shading):  `o_05_cube.png`, `o_08_office.png`, `o_07_toon_faces.png`
+
+Ray tracing with weighted vertex normals: `o_09_rings.png`
+
+Ray tracing with texture support: `o_10_pokemon.png`
 <!--
 Phong lighting model and reflections with spheres `o_01_spheres.png`.
 <div style="display: inline-block; vertical-align: top;">
     <img src="outputs/o_01_spheres.png" alt="o_01_spheres.png" width="250"><br>
     <strong>Phong Lighting Model for spheres</strong><br>
   </div>
-  
-Ray tracing with triangle meshes(flat shading):  `o_05_cube.png`, `o_08_office.png`, `o_07_toon_faces.png`
-
-Ray tracing with texture support: `o_10_pokemon.png`
 --->
 
 
 <!-------
 <h2>Outputs</h2>
+Below is a subset of the results that can be found in the [outputs](outputs/).
 <table>
   <tr>
     <td align="center">

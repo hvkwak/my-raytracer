@@ -102,18 +102,20 @@ vec3 Raytracer::lighting(const vec3 &point, const vec3 &normal,
       i += 1.0;
     }
 
-    // compute hard shadow term
-    Material shadow_material;
-    vec3 shadow_point;
-    vec3 shadow_normal;
-    double shadow_t;
-    vec3 light_direction = normalize(light.position - point);
-    double light_distance = norm(light.position - point);
-
-    Ray shadow_ray = Ray(point + epsilon * light_direction, light_direction);
-    bool isIntersect = intersect_scene(shadow_ray, shadow_material, shadow_point, shadow_normal, shadow_t);
-    bool isShadow = isIntersect && shadow_t < light_distance && 0.0 < shadow_t;
-
+    bool isShadow = false;
+    if (material.shadowable){
+      // compute hard shadow term
+      Material shadow_material;
+      vec3 shadow_point;
+      vec3 shadow_normal;
+      double shadow_t;
+      vec3 light_direction = normalize(light.position - point);
+      double light_distance = norm(light.position - point);
+      Ray shadow_ray = Ray(point + epsilon * light_direction, light_direction);
+      bool isIntersect = intersect_scene(shadow_ray, shadow_material,
+                                         shadow_point, shadow_normal, shadow_t);
+      isShadow = isIntersect && shadow_t < light_distance && 0.0 < shadow_t;
+    }
     color[0] += light.color[0] * !isShadow * (material.diffuse[0] * diffuse_ + material.specular[0] * reflection_);
     color[1] += light.color[1] * !isShadow * (material.diffuse[1] * diffuse_ + material.specular[1] * reflection_);
     color[2] += light.color[2] * !isShadow * (material.diffuse[2] * diffuse_ + material.specular[2] * reflection_);

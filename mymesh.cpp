@@ -18,67 +18,44 @@
 
 /**
  * @brief returns if ray intersects a mesh bounding box
+ *        based on Slab method
  *
  * @param ray - ray, of which intersection is tested
  * @return true, if ray intersects a mesh bounding box
  */
 bool Mesh::intersect_bounding_box(const Ray &ray) const {
 
-  // get 6 planes and their parameters
-  vec3 vec_x = (vec3(bb_max_[0] - bb_min_[0], 0.0, 0.0));
-  vec3 vec_y = (vec3(0.0, bb_max_[1] - bb_min_[1], 0.0));
-  vec3 vec_z = (vec3(0.0, 0.0, bb_max_[2] - bb_min_[2]));
+  /** \todo in Mesh.cpp*/
+  double tmin = (bb_min_[0] - ray.origin_[0]) / ray.direction_[0];
+  double tmax = (bb_max_[0] - ray.origin_[0]) / ray.direction_[0];
 
-  vec3 center1 = bb_min_ + vec_x/2.0 + vec_y/2.0;
-  vec3 center2 = bb_min_ + vec_y/2.0 + vec_z/2.0;
-  vec3 center3 = bb_min_ + vec_z/2.0 + vec_x/2.0;
-  vec3 center4 = bb_min_ + vec_z + vec_x/2.0 + vec_y/2.0;
-  vec3 center5 = bb_min_ + vec_x + vec_y/2.0 + vec_z/2.0;
-  vec3 center6 = bb_min_ + vec_y + vec_z/2.0 + vec_x/2.0;
+  if (tmin > tmax)
+    std::swap(tmin, tmax);
 
-  vec3 normal1 = normalize(cross(vec_x, vec_y));
-  vec3 normal2 = normalize(cross(vec_y, vec_z));
-  vec3 normal3 = normalize(cross(vec_z, vec_x));
-  vec3 normal4 = normalize(cross(vec_y, vec_x));
-  vec3 normal5 = normalize(cross(vec_z, vec_y));
-  vec3 normal6 = normalize(cross(vec_x, vec_z));
+  double tymin = (bb_min_[1] - ray.origin_[1]) / ray.direction_[1];
+  double tymax = (bb_max_[1] - ray.origin_[1]) / ray.direction_[1];
 
-  Plane plane1(center1, normal1);
-  Plane plane2(center2, normal2);
-  Plane plane3(center3, normal3);
-  Plane plane4(center4, normal4);
-  Plane plane5(center5, normal5);
-  Plane plane6(center6, normal6);
-  std::vector<Plane> planes = {plane1, plane2, plane3, plane4, plane5, plane6};
+  if (tymin > tymax)
+    std::swap(tymin, tymax);
 
-  const double epsilon = 1e-9;
-  for (Plane &plane : planes) {
+  if ((tmin > tymax) || (tymin > tmax))
+    return false;
 
-    // check if parallel
-    double cosTheta = dot(plane.normal_, ray.direction_);
-    bool isParallel = std::abs(cosTheta) < epsilon;
-    if (isParallel) {
-      continue;
-    }
+  tmin = std::max(tmin, tymin);
+  tmax = std::min(tmax, tymax);
 
-    // compute intersection of ray point on plane
-    double distance = dot(plane.normal_, plane.center_); // distance from origin
-    double t = distance - (plane.normal_[0] * ray.origin_[0] + plane.normal_[1] * ray.origin_[1] + plane.normal_[2] * ray.origin_[2]);
-    t /= (plane.normal_[0] * ray.direction_[0] + plane.normal_[1] *
-    ray.direction_[1] + plane.normal_[2] * ray.direction_[2]);
+  double tzmin = (bb_min_[2] - ray.origin_[2]) / ray.direction_[2];
+  double tzmax = (bb_max_[2] - ray.origin_[2]) / ray.direction_[2];
 
-    if (t > 1e-5) {
-      // possible intersectioni poin, check if it is within range
-      vec3 point = ray(t);
-      bool isX = bb_min_[0] <= point[0] && point[0] <= bb_max_[0];
-      bool isY = bb_min_[1] <= point[1] && point[1] <= bb_max_[1];
-      bool isZ = bb_min_[2] <= point[2] && point[2] <= bb_max_[2];
-      if (isX && isY && isZ) {
-        return true;
-      }
-    }
-  }
-  return false;
+  if (tzmin > tzmax)
+    std::swap(tzmin, tzmax);
+
+  if ((tmin > tzmax) || (tzmin > tmax))
+    return false;
+
+  tmax = std::min(tmax, tzmax);
+
+  return tmax > 1e-5; // Check if intersection is in front of ray
 }
 
 //-----------------------------------------------------------------------------
@@ -152,6 +129,7 @@ void Mesh::compute_normals() {
   }
 
   // compute vertex normals
+  // per triangle update all three vertices normals
   for (Triangle &t : triangles_) {
 
     // positions
@@ -174,7 +152,7 @@ void Mesh::compute_normals() {
     const double d1 = dot(v1, -v0);
     const double d2 = dot(v2, -v1);
 
-    // Angle-weight denominators: ||u||*||v|| + dot(u,v)
+    // Angle-weight denominators: ||u|| * ||v|| + dot(u,v)
     // This equals 2*||u||*||v||*cos^2(theta/2), stays stable near 0.
     const double w0_den = length0 * length2 + d0;
     const double w1_den = length1 * length0 + d1;
