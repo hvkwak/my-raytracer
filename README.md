@@ -16,7 +16,7 @@ Personal implementations of the ray tracing exercises for the *Computer Graphics
 Below is a subset of the results that can be found in the [outputs](outputs/).
 <table>
   <tr>
-    <th colspan="3" align="left">Ray tracing with Phong Lighitng</th>
+    <th colspan="3" align="left">Ray tracing with Phong lighting</th>
   </tr>
   <tr>
     <td align="center">
