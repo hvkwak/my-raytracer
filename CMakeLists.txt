@@ -1,4 +1,4 @@
-# solutions/CMakeLists.txt
+# my-raytracer/CMakeLists.txt
 file(GLOB_RECURSE SOL_SRCS CONFIGURE_DEPENDS ./*.cpp)
 
 # Add solution files into the existing raytracer executable
