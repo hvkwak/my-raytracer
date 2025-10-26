@@ -10,7 +10,7 @@ public:
 
   BVH() = default;
   ~BVH();
-  void init(std::vector<Object_ptr> &objects);
+  void init(std::vector<Mesh*> &meshData);
   bool isInitialized() const;
   bool intersectAABB(const Ray & ray, const vec3 & bb_min_, const vec3 & bb_max_) const;
   bool intersectBVH(const Ray &ray,
@@ -22,21 +22,32 @@ public:
 
 
 private:
+  // define Triangle != Mesh::Triangle
+
+  struct Triangle {
+    vec3 vertex0, vertex1, vertex2;
+    vec3 centroid;
+    int meshIdx;
+  };
+
   // define BVH Node
   struct BVHNode {
     /// point of the bounding box
     vec3 bb_min_, bb_max_;
     int leftChildIdx; //rightChild == leftChild + 1
-    int firstMeshIdx;
-    int meshCount;
+    int firstTriIdx, triCount;
   };
 
-  void filterMesh(std::vector<Object_ptr> &objects);
+  void getData(std::vector<Mesh*> &meshData);
   void updateNodeBounds(int nodeIdx);
-  void subDivide(int nodeIdx);
+  void subdivide(int nodeIdx, int depth);
+  double median(int axis, int firstTriIdx, int triCount);
+  double median_inplace(std::vector<double> &a);
 
-  std::vector<BVHNode> bvhNode;
-  std::vector<Mesh *> meshes;
+  std::vector<BVHNode> bvhNodes;
+  std::vector<Mesh::Triangle*> triangles;
+  std::vector<Mesh*> meshes;
+
   const int rootNodeIdx = 0;
   int nodesUsed = 1;
   bool isInitialized_ = false;
