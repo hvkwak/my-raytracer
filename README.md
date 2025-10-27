@@ -5,12 +5,8 @@ Personal implementations of the ray tracing exercises for the *Computer Graphics
 ⚠️ The official exercise codebase is **copyrighted** by the **Computer Graphics Group, TU Dortmund** and **is not included** in this repository.
 
 ## Updates
+- [2025-10-27] Implemented basic BVH (Bounding Volume Hierarchy) with my median-split. Ref: [jbikker](https://github.com/jbikker/bvh_article)
 - [2025-10-20] Implemented all TODOs in the course exercises (Phong lighting model, reflections, intersections, flat and Phong shading, textures, acceleration with axis-aligned bounding box (AABB) tests) for ray tracing.
-
-## Installation
-1. Obtain the official exercise codebase from the course.
-2. Clone this repository into the codebase’s project root.
-3. Build and run following the instructions in the codebase’s `README.md`.
 
 ## Outputs
 Below is a subset of the results that can be found in the [outputs](outputs/).
