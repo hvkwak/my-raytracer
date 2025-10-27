@@ -1,5 +1,5 @@
 # My Ray Tracer
-Personal implementations of the ray tracing exercises for the *Computer Graphics (Graphische Datenverarbeitung)* course at the Computer Graphics Group, TU Dortmund.
+Ray tracing, BVH, and its acceleration with CUDA based on the course *Computer Graphics (Graphische Datenverarbeitung)* @ Computer Graphics Group, TU Dortmund 
 
 ## Note
 ⚠️ The official exercise codebase is **copyrighted** by the **Computer Graphics Group, TU Dortmund** and **is not included** in this repository.
