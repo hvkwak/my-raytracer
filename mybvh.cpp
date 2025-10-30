@@ -6,12 +6,12 @@
 
 BVH::~BVH(){}
 
-void BVH::init(std::vector<Mesh*> &meshData) {
 
-  // filter mesh objects
-  getData(meshData);
-  int triCount = triangles.size();
-  if (triCount > 2){
+void BVH::init(std::vector<Mesh*> &meshes, int triCount) {
+
+  if (meshes.size() > 0){
+    // filter mesh objects
+    getData(meshes);
     bvhNodes.resize(2 * triCount - 1);
 
     // build BVH
@@ -100,11 +100,10 @@ void BVH::subdivide(int nodeIdx, int depth){
  * @param
  * @return
  */
-void BVH::getData(std::vector<Mesh*> &meshData){
-  meshes = meshData; // TODO: check if it is ok
+void BVH::getData(std::vector<Mesh*> &meshes){
   int i = 0;
   for (Mesh* mesh : meshes){
-    for (Mesh::Triangle &tri : mesh->triangles_) {
+    for (Triangle &tri : mesh->triangles_) {
       // for each triangle
       vec3 vertex0 = mesh->vertices_.at(tri.i0).position;
       vec3 vertex1 = mesh->vertices_.at(tri.i1).position;
@@ -131,7 +130,7 @@ void BVH::updateNodeBounds(int nodeIdx){
   node.bb_min_ = vec3(DBL_MAX);
   node.bb_max_ = vec3(-DBL_MAX);
   for (int i = node.firstTriIdx; i < node.firstTriIdx + node.triCount; i++){
-    Mesh::Triangle* tri = triangles.at(i);
+    Triangle* tri = triangles.at(i);
     Mesh* mesh = meshes.at(tri->meshIdx);
     node.bb_min_ = fmin(node.bb_min_, mesh->vertices_.at(tri->i0).position);
     node.bb_min_ = fmin(node.bb_min_, mesh->vertices_.at(tri->i1).position);

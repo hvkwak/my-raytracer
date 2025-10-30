@@ -1,6 +1,7 @@
 #include "utils/vec3.h"
 #include "utils/Ray.h"
 #include "utils/Material.h"
+#include "utils/Triangle.h"
 #include "Mesh.h"
 #include <math.h>
 
@@ -10,7 +11,7 @@ public:
 
   BVH() = default;
   ~BVH();
-  void init(std::vector<Mesh*> &meshData);
+  void init(std::vector<Mesh*> &meshes, int triCount);
   bool isInitialized() const;
   bool intersectAABB(const Ray & ray, const vec3 & bb_min_, const vec3 & bb_max_) const;
   bool intersectBVH(const Ray &ray,
@@ -22,13 +23,6 @@ public:
 
 
 private:
-  // define Triangle != Mesh::Triangle
-
-  struct Triangle {
-    vec3 vertex0, vertex1, vertex2;
-    vec3 centroid;
-    int meshIdx;
-  };
 
   // define BVH Node
   struct BVHNode {
@@ -38,14 +32,15 @@ private:
     int firstTriIdx, triCount;
   };
 
-  void getData(std::vector<Mesh*> &meshData);
+  void getData(std::vector<Mesh*> &meshes);
   void updateNodeBounds(int nodeIdx);
   void subdivide(int nodeIdx, int depth);
   double median(int axis, int firstTriIdx, int triCount);
   double median_inplace(std::vector<double> &a);
 
   std::vector<BVHNode> bvhNodes;
-  std::vector<Mesh::Triangle*> triangles;
+  std::vector<Triangle*> triangles;
+  std::vector<Triangle*> triangles;
   std::vector<Mesh*> meshes;
 
   const int rootNodeIdx = 0;
