@@ -9,7 +9,95 @@
 #include "Raytracer.h"
 #include "utils/vec3.h"
 #include "utils/Material.h"
+#include <fstream>
+#include <sstream>
+#include <stdint.h>
 
+void Raytracer::pre_read_scene(const std::string &filename)
+{
+  iVertexCount_ = 0;
+  iTriangleCount_ = 0;
+  iMeshCount_ = 0;
+  std::ifstream ifs(filename);
+  if (!ifs) {
+    std::cerr << "Cannot open file " << filename << std::endl;
+    exit(1);
+  }
+
+  char line[200];
+  std::string token;
+
+  // parse file
+  while (ifs && (ifs >> token) && (!ifs.eof())) {
+    if (token[0] == '#') {
+      ifs.getline(line, 200);
+    } else if (token == "mesh") {
+      std::string fn, mode;
+      ifs >> fn >> mode;
+
+      // add path of scene-file to mesh's filename
+      std::string path(filename);
+      path = path.substr(0, path.find_last_of('/') + 1);
+      fn = path + fn;
+      pre_read_obj(fn.c_str());
+      iMeshCount_++;
+    } else {
+      continue;
+    }
+  }
+  ifs.close();
+  Data_.vVertexPos_.reserve(iVertexCount_);
+  Data_.vVertexIndex_.reserve(iTriangleCount_*3);
+  Data_.vFirstVertex_.reserve(iMeshCount_);
+  Data_.vVertexCount_.reserve(iMeshCount_);
+  Data_.vFirstIndex_.reserve(iMeshCount_);
+  Data_.vIndexCount_.reserve(iMeshCount_);
+
+  std::cout << "\ndone (" << iVertexCount_ << " Vertices)\n";
+  std::cout << "\ndone (" << iTriangleCount_ << " Triangles)\n";
+  std::cout << "\ndone (" << iMeshCount_ << " Meshes)\n";
+}
+
+void Raytracer::pre_read_obj(const char* _filename)
+{
+  int vertexCount = 0;
+  int triangleCount = 0;
+  // open obj file
+  std::ifstream ifs(_filename);
+  if (!ifs) {
+    std::cerr << "Can't open " << _filename << "\n";
+    return;
+  }
+
+  std::string filename(_filename);
+  std::string line;
+  // parse line by line
+  while (std::getline(ifs, line)) {
+    // divide line into header (first word) and lineData (rest)
+    size_t firstSpace = line.find_first_of(" ");
+    std::string header = line.substr(0, firstSpace);
+    std::istringstream lineData(line.substr(firstSpace + 1));
+
+    // vertices
+    if (header == "v") {
+      vertexCount++;
+      continue;
+    }
+    // faces
+    if (header == "f") {
+      triangleCount++;
+      continue;
+    }
+  }
+  iVertexCount_ = iVertexCount_ + vertexCount;
+  iTriangleCount_ = iTriangleCount_ + triangleCount*3;
+
+
+  std::cout << "\n  read " << _filename << ": "
+            << vertexCount << " vertices, "
+            << triangleCount << " triangles"
+            << std::flush;
+}
 
 /**
  * @brief returns diffuse term
@@ -91,7 +179,7 @@ vec3 Raytracer::lighting(const vec3 &point, const vec3 &normal,
 
   // diffuse: direct in, uniform out. dull / mat surfaces
   // specular refelction: directed in, directed out, shiny surfaces.
-  for (const Light &light : lights_) {
+  for (const Light &light : vLights_) {
 
     // compute diffuse and specular term
     double diffuse_ = diffuse(point, normal, light);

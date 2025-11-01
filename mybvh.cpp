@@ -201,7 +201,7 @@ bool BVH::intersectBVH(const Ray& ray,
     double t;
     vec3 p, n, d;
     for (int i = node.firstTriIdx; i < node.firstTriIdx + node.triCount; i++){
-      Mesh::Triangle* tri = triangles.at(i);
+      Triangle* tri = triangles.at(i);
       Mesh* mesh = meshes.at(tri->meshIdx);
       if (mesh->intersect_triangle(*tri, ray, p, n, d, t)) {
         if (t < intersection_distance) {
