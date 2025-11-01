@@ -40,7 +40,6 @@ private:
 
   std::vector<BVHNode> bvhNodes;
   std::vector<Triangle*> triangles;
-  std::vector<Triangle*> triangles;
   std::vector<Mesh*> meshes;
 
   const int rootNodeIdx = 0;

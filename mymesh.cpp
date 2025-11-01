@@ -10,11 +10,209 @@
 #include "Plane.h"
 #include "myutils.h"
 #include <algorithm>
-// #include <fstream>
-// #include <string>
-// #include <sstream>
-// #include <map>
-// #include <cfloat>
+#include <fstream>
+#include <string>
+#include <sstream>
+#include <map>
+#include <cfloat>
+#include "utils/Data.h"
+
+Mesh::Mesh(Data& Data_,
+           Draw_mode _draw_mode,
+           const std::string& _filename)
+{
+    // set draw mode
+    draw_mode_ = _draw_mode;
+
+    hasTexture_ = false;
+
+    // load mesh from file
+    read_obj(Data_, _filename.c_str());
+}
+
+/**
+ * @brief read mesh verticies and tri faces in concat vectors
+ *
+ * @param
+ * @return
+ */
+bool Mesh::read_obj(Data & Data_, const char *_filename)
+{
+  int vbase = Data_.vVertexPos_.size();
+  int ibase = Data_.vVertexIndex_.size();
+  Data_.vFirstVertex_.push_back(vbase);
+  Data_.vFirstIndex_.push_back(ibase);
+
+  int vertexCount = 0;
+  int triangleCount = 0;
+
+  // open obj file
+  std::ifstream ifs(_filename);
+  if (!ifs) {
+    std::cerr << "Can't open " << _filename << "\n";
+    return false;
+  }
+
+  bool hasNormals = false;
+  bool hasUV = false;
+
+  std::string filename(_filename);
+  std::string line;
+  int counter = -1;
+  std::map<int, bool> uvDone;
+  std::vector<Image> textures;
+  // parse line by line
+  while (std::getline(ifs, line)) {
+    // divide line into header (first word) and lineData (rest)
+    size_t firstSpace = line.find_first_of(" ");
+    std::string header = line.substr(0, firstSpace);
+    std::istringstream lineData(line.substr(firstSpace + 1));
+
+    // vertices
+    if (header == "v") {
+      vec3 v;
+      lineData >> v[0] >> v[1] >> v[2];
+      Data_.vVertexPos_.push_back(v);
+      vertexCount++;
+      continue;
+    }
+
+    // uv-coordinates
+    if (header == "vt") {
+      hasUV = true;
+
+      double u, v;
+
+      lineData >> u >> v;
+
+      if (u > 1.0 || u < 0.0)
+        u -= floor(u);
+      if (v > 1.0 || v < -0.0)
+        v -= floor(v);
+
+      u_coordinates_.push_back(u);
+      v_coordinates_.push_back(v);
+      continue;
+    }
+
+    if (header == "vn") {
+      hasNormals = true;
+      continue;
+    }
+
+    // material file
+    if (header == "mtllib") {
+      std::stringstream mtl;
+      mtl << filename.substr(0, filename.find_last_of("/") + 1)
+          << lineData.str();
+
+      if (!read_mtl(mtl.str(), textures)) {
+        std::cerr << "Cannot read mtl file " << mtl.str() << std::endl;
+      }
+
+      if (textures.size() > 0)
+        hasTexture_ = true;
+
+      continue;
+    }
+
+    // start of new material
+    if (header == "usemtl") {
+      counter++;
+      continue;
+    }
+
+    // faces
+    if (header == "f") {
+      Triangle t;
+
+      int uv[3];
+
+      enum { NORMALS, UV, BOTH, NONE } nuv_status;
+      if (hasUV)
+        nuv_status = hasNormals ? BOTH : UV;
+      else
+        nuv_status = hasNormals ? NORMALS : NONE;
+
+      // dummy variables for / and normal indices
+      int d1;
+      char d2;
+
+      // read in face indices and uv indices, skip normal indices
+      switch (nuv_status) {
+      case BOTH:
+        // format: index0/texture0/normal0 index1/texture1/normal1
+        // index2/texture2/normal2
+        lineData >> t.i0 >> d2 >> uv[0] >> d2 >> d1;
+        lineData >> t.i1 >> d2 >> uv[1] >> d2 >> d1;
+        lineData >> t.i2 >> d2 >> uv[2] >> d2 >> d1;
+
+        uv[0]--;
+        uv[1]--;
+        uv[2]--;
+        t.iuv0 = uv[0];
+        t.iuv1 = uv[1];
+        t.iuv2 = uv[2];
+        break;
+      case UV:
+        // format: index0/texture0 index1/texture1 index2/texture2
+        lineData >> t.i0 >> d2 >> uv[0];
+        lineData >> t.i1 >> d2 >> uv[1];
+        lineData >> t.i2 >> d2 >> uv[2];
+
+        uv[0]--;
+        uv[1]--;
+        uv[2]--;
+        t.iuv0 = uv[0];
+        t.iuv1 = uv[1];
+        t.iuv2 = uv[2];
+      case NORMALS:
+        // format: index0//normal0 index1//normal1 index2//normal2
+        lineData >> t.i0 >> d2 >> d2 >> d1;
+        lineData >> t.i1 >> d2 >> d2 >> d1;
+        lineData >> t.i2 >> d2 >> d2 >> d1;
+      case NONE:
+        // format: index0 index1 index2
+        lineData >> t.i0 >> t.i1 >> t.i2;
+      }
+
+      // decrement because obj indices start by 1
+      t.i0--;
+      t.i1--;
+      t.i2--;
+
+      // convert uv coordinates s.th. we can use just one big combined tex
+      // instead of multiple ones
+      for (int i = 0; i < 3 && hasUV; i++) {
+        if (!uvDone[uv[i]]) {
+          int combinedW = 0;
+          for (int i = 0; i < counter; i++) {
+            combinedW += textures[i].width();
+          }
+          u_coordinates_[uv[i]] =
+              (u_coordinates_[uv[i]] * textures[counter].width() + combinedW) /
+              static_cast<double>(texture_.width());
+          v_coordinates_[uv[i]] =
+              (v_coordinates_[uv[i]] * textures[counter].height()) /
+              static_cast<double>(texture_.height());
+          uvDone[uv[i]] = true;
+        }
+      }
+      Data_.vVertexIndex_.push_back(vbase + t.i0);
+      Data_.vVertexIndex_.push_back(vbase + t.i1);
+      Data_.vVertexIndex_.push_back(vbase + t.i2);
+      triangleCount++;
+    }
+  }
+  Data_.vVertexCount_.push_back(vertexCount);
+  Data_.vIndexCount_.push_back(triangle_count);
+  std::cout << "\n  read " << _filename << ": "
+            << vertexCount << " vertices, "
+            << triangleCount << " triangles"
+            << std::flush;
+
+  return true;
+}
 
 /**
  * @brief returns if ray intersects a mesh bounding box
