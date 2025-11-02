@@ -13,7 +13,7 @@ public:
   BVH() = default;
   ~BVH();
 
-  void init(std::vector<Mesh*> &meshes, int triCount);
+  void init(std::vector<Mesh*> &meshes);
   void init_SoA(std::vector<Mesh*> &meshes, Data* data);
   bool isInitialized() const;
   bool intersectAABB(const Ray & ray, const vec3 & bb_min_, const vec3 & bb_max_) const;
@@ -23,6 +23,12 @@ public:
                     vec3 &intersection_normal,
                     double &intersection_distance,
                     int nodeIdx) const;
+  bool intersectBVH_SoA(const Ray &ray,
+                        Material& intersection_material,
+                        vec3 &intersection_point,
+                        vec3 &intersection_normal,
+                        double &intersection_distance,
+                        int nodeIdx) const;
 
 private:
 
@@ -34,13 +40,13 @@ private:
     int firstTriIdx, triCount;
   };
 
-  /// no SoA
+  /// non-SoA
   void getData(std::vector<Mesh*> &meshes);
   void updateNodeBounds(int nodeIdx);
   void subdivide(int nodeIdx, int depth);
   void inplace_partition(int nodeIdx, double splitPos, int axis, int& i);
 
-  /// methods for SoA
+  /// SoA
   void updateNodeBounds_SoA(int nodeIdx);
   void subdivide_SoA(int nodeIdx, int depth);
   void inplace_partition_SoA(int nodeIdx, double splitPos, int axis, int & i);
@@ -51,12 +57,13 @@ private:
   double median_inplace(std::vector<double> &a);
 
   /// Nodes, Triangles, Meshes
-  std::vector<BVHNode> bvhNodes;
-  std::vector<Triangle*> triangles;
-  std::vector<Mesh*> meshes;
+  std::vector<BVHNode> bvhNodes_;
+  std::vector<Triangle*> triangles_;
+  std::vector<Mesh*> meshes_;
 
-  int rootNodeIdx = 0;
-  int nodesUsed = 1;
+  int triCount = 0;
+  int rootNodeIdx_ = 0;
+  int nodesUsed_ = 1;
   bool isInitialized_ = false;
 
   Data* data_;
