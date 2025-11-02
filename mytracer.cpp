@@ -46,12 +46,12 @@ void Raytracer::pre_read_scene(const std::string &filename)
     }
   }
   ifs.close();
-  Data_.vVertexPos_.reserve(iVertexCount_);
-  Data_.vVertexIndex_.reserve(iTriangleCount_*3);
-  Data_.vFirstVertex_.reserve(iMeshCount_);
-  Data_.vVertexCount_.reserve(iMeshCount_);
-  Data_.vFirstIndex_.reserve(iMeshCount_);
-  Data_.vIndexCount_.reserve(iMeshCount_);
+  data_.vVertexPos_.reserve(iVertexCount_);
+  data_.vVertexIndex_.reserve(iTriangleCount_*3);
+  data_.vFirstVertex_.reserve(iMeshCount_);
+  data_.vVertexCount_.reserve(iMeshCount_);
+  data_.vFirstIndex_.reserve(iMeshCount_);
+  data_.vIndexCount_.reserve(iMeshCount_);
 
   std::cout << "\ndone (" << iVertexCount_ << " Vertices)\n";
   std::cout << "\ndone (" << iTriangleCount_ << " Triangles)\n";
@@ -90,7 +90,7 @@ void Raytracer::pre_read_obj(const char* _filename)
     }
   }
   iVertexCount_ = iVertexCount_ + vertexCount;
-  iTriangleCount_ = iTriangleCount_ + triangleCount*3;
+  iTriangleCount_ = iTriangleCount_ + triangleCount;
 
 
   std::cout << "\n  read " << _filename << ": "
