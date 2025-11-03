@@ -258,18 +258,20 @@ bool Mesh::intersect_triangle_SoA(const vec3& p0,
                                   const vec3& vn0,
                                   const vec3& vn1,
                                   const vec3& vn2,
-                                  const int& u0,
-                                  const int& u1,
-                                  const int& u2,
-                                  const int& v0,
-                                  const int& v1,
-                                  const int& v2,
+                                  const double& u0,
+                                  const double& u1,
+                                  const double& u2,
+                                  const double& v0,
+                                  const double& v1,
+                                  const double& v2,
                                   const Ray &ray,
                                   vec3 &intersection_point,
                                   vec3 &intersection_normal,
                                   vec3 &intersection_diffuse,
                                   double &intersection_distance) const
 {
+  std::cout << "intersectTriangleSoA" << std::endl;
+
   intersection_diffuse = material_.diffuse;
 
   // rearranged `ray.origin + t*ray.dir = a*p0 + b*p1 + (1-a-b)*p2`

@@ -33,23 +33,6 @@ void Raytracer::buildSoA(){
     data_.vertexCount_.push_back(vertexCount);
     data_.meshes_.insert(data_.meshes_.end(), vertexCount, mesh);
 
-    // ibase Vertex Indicies + Texture Indices
-    int ibase = data_.vertexIdx_.size();
-    int vertexIdxCount = mesh->triangles_.size()*3;
-    for (Triangle triangle : mesh->triangles_){
-      data_.vertexIdx_.push_back(triangle.i0);
-      data_.vertexIdx_.push_back(triangle.i1);
-      data_.vertexIdx_.push_back(triangle.i2);
-      data_.textureIdx_.push_back(triangle.iuv0);
-      data_.textureIdx_.push_back(triangle.iuv1);
-      data_.textureIdx_.push_back(triangle.iuv2);
-      data_.normals_.push_back(triangle.normal);
-    }
-    data_.firstVertexIdx_.push_back(ibase);
-    data_.vertexIdxCount_.push_back(vertexIdxCount);
-    data_.firstTextIdx_.push_back(ibase);
-    data_.textIdxCount_.push_back(vertexIdxCount);
-
     // Texture Coordinates
     int tbase = data_.textureCoordinatesU_.size();
     int textureCount = mesh->u_coordinates_.size(); // same as V
@@ -57,6 +40,23 @@ void Raytracer::buildSoA(){
     data_.textureCoordinatesV_.insert(data_.textureCoordinatesV_.end(), mesh->v_coordinates_.begin(), mesh->v_coordinates_.end());
     data_.firstTextIdx_.push_back(tbase);
     data_.textIdxCount_.push_back(textureCount);
+
+    // ibase Vertex Indicies + Texture Indices
+    int ibase = data_.vertexIdx_.size();
+    int vertexIdxCount = mesh->triangles_.size()*3;
+    for (Triangle triangle : mesh->triangles_){
+      data_.vertexIdx_.push_back(vbase+triangle.i0);
+      data_.vertexIdx_.push_back(vbase+triangle.i1);
+      data_.vertexIdx_.push_back(vbase+triangle.i2);
+      data_.textureIdx_.push_back(tbase+triangle.iuv0);
+      data_.textureIdx_.push_back(tbase+triangle.iuv1);
+      data_.textureIdx_.push_back(tbase+triangle.iuv2);
+      data_.normals_.push_back(triangle.normal);
+    }
+    data_.firstVertexIdx_.push_back(ibase);
+    data_.vertexIdxCount_.push_back(vertexIdxCount);
+    data_.firstTextIdx_.push_back(ibase);
+    data_.textIdxCount_.push_back(vertexIdxCount);
   }
   std::cout << " done. \n" << std::flush;
 }
