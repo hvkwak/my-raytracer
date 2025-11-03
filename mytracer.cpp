@@ -14,154 +14,81 @@
 #include <string>
 #include <map>
 
+/**
+ * @brief builds SoA based on the read meshes
+ */
+void Raytracer::buildSoA(){
+  std::cout << "buildSoA...";
+  for (Mesh* mesh : meshes_){
 
-// /**
-//  * @brief read vertices and indices in concat vectors
-//  *        (complete read in Mesh.cpp)
-//  */
-// bool Raytracer::read_obj(const char *_filename, Mesh* mesh)
-// {
-//   int vbase = data_.vVertexPos_.size();
-//   int ibase = data_.vVertexIdx_.size();
-//   data_.vFirstVertex_.push_back(vbase);
-//   data_.vFirstIdx_.push_back(ibase);
+    // Vertex
+    int vbase = data_.vertexPos_.size();
+    int vertexCount = mesh->vertices_.size();
+    for (Vertex vertex : mesh->vertices_){
+      data_.vertexPos_.push_back(vertex.position); // :(
+    }
+    // data_.vertexPos_.insert(data_.vertexPos_.end(), mesh->vertices_.begin(), mesh->vertices_.end());
+    data_.firstVertex_.push_back(vbase);
+    data_.vertexCount_.push_back(vertexCount);
 
-//   int vertexCount = 0;
-//   int triangleCount = 0;
+    // Vertex Indicies + Texture Indices
+    int ibase = data_.vertexIdx_.size();
+    int vertexIdxCount = mesh->triangles_.size()*3;
+    for (Triangle triangle : mesh->triangles_){
+      data_.vertexIdx_.push_back(triangle.i0);
+      data_.vertexIdx_.push_back(triangle.i1);
+      data_.vertexIdx_.push_back(triangle.i2);
+      data_.textureIdx_.push_back(triangle.iuv0);
+      data_.textureIdx_.push_back(triangle.iuv1);
+      data_.textureIdx_.push_back(triangle.iuv2);
+    }
+    data_.firstVertexIdx_.push_back(ibase);
+    data_.vertexIdxCount_.push_back(vertexIdxCount);
+    data_.firstTextIdx_.push_back(ibase);
+    data_.textIdxCount_.push_back(vertexIdxCount);
 
-//   // open obj file
-//   std::ifstream ifs(_filename);
-//   if (!ifs) {
-//     std::cerr << "Can't open " << _filename << "\n";
-//     return false;
-//   }
+    // Meshes
+    data_.meshes_.insert(data_.meshes_.end(), vertexIdxCount, mesh);
 
-//   bool hasNormals = false;
-//   bool hasUV = false;
+    // Texture Coordinates
+    int tbase = data_.textureCoordinatesU_.size();
+    int textureCount = mesh->u_coordinates_.size(); // same as V
+    data_.textureCoordinatesU_.insert(data_.textureCoordinatesU_.end(), mesh->u_coordinates_.begin(), mesh->u_coordinates_.end());
+    data_.textureCoordinatesV_.insert(data_.textureCoordinatesV_.end(), mesh->v_coordinates_.begin(), mesh->v_coordinates_.end());
+    data_.firstTextIdx_.push_back(tbase);
+    data_.textIdxCount_.push_back(textureCount);
+  }
+  std::cout << " done. \n" << std::flush;
+}
 
-//   std::string filename(_filename);
-//   std::string line;
-//   // parse line by line
-//   while (std::getline(ifs, line)) {
-//     // divide line into header (first word) and lineData (rest)
-//     size_t firstSpace = line.find_first_of(" ");
-//     std::string header = line.substr(0, firstSpace);
-//     std::istringstream lineData(line.substr(firstSpace + 1));
 
-//     // vertices
-//     if (header == "v") {
-//       vec3 v;
-//       lineData >> v[0] >> v[1] >> v[2];
-//       data_.vVertexPos_.push_back(v);
-//       vertexCount++;
-//       continue;
-//     }
-
-//     // uv-coordinates
-//     if (header == "vt") {
-//       hasUV = true;
-//       continue;
-//     }
-
-//     if (header == "vn") {
-//       hasNormals = true;
-//       continue;
-//     }
-
-//     // material file
-//     if (header == "mtllib") {
-//       continue;
-//     }
-
-//     // start of new material
-//     if (header == "usemtl") {
-//       continue;
-//     }
-
-//     // faces
-//     if (header == "f") {
-//       Triangle t;
-
-//       int uv[3];
-
-//       enum { NORMALS, UV, BOTH, NONE } nuv_status;
-//       if (hasUV)
-//         nuv_status = hasNormals ? BOTH : UV;
-//       else
-//         nuv_status = hasNormals ? NORMALS : NONE;
-
-//       // dummy variables for / and normal indices
-//       int d1;
-//       char d2;
-
-//       // read in face indices and uv indices, skip normal indices
-//       switch (nuv_status) {
-//       case BOTH:
-//         // format: index0/texture0/normal0 index1/texture1/normal1
-//         // index2/texture2/normal2
-//         lineData >> t.i0 >> d2 >> uv[0] >> d2 >> d1;
-//         lineData >> t.i1 >> d2 >> uv[1] >> d2 >> d1;
-//         lineData >> t.i2 >> d2 >> uv[2] >> d2 >> d1;
-
-//         uv[0]--;
-//         uv[1]--;
-//         uv[2]--;
-//         t.iuv0 = uv[0];
-//         t.iuv1 = uv[1];
-//         t.iuv2 = uv[2];
-//         break;
-//       case UV:
-//         // format: index0/texture0 index1/texture1 index2/texture2
-//         lineData >> t.i0 >> d2 >> uv[0];
-//         lineData >> t.i1 >> d2 >> uv[1];
-//         lineData >> t.i2 >> d2 >> uv[2];
-
-//         uv[0]--;
-//         uv[1]--;
-//         uv[2]--;
-//         t.iuv0 = uv[0];
-//         t.iuv1 = uv[1];
-//         t.iuv2 = uv[2];
-//       case NORMALS:
-//         // format: index0//normal0 index1//normal1 index2//normal2
-//         lineData >> t.i0 >> d2 >> d2 >> d1;
-//         lineData >> t.i1 >> d2 >> d2 >> d1;
-//         lineData >> t.i2 >> d2 >> d2 >> d1;
-//       case NONE:
-//         // format: index0 index1 index2
-//         lineData >> t.i0 >> t.i1 >> t.i2;
-//       }
-
-//       // decrement because obj indices start by 1
-//       t.i0--;
-//       t.i1--;
-//       t.i2--;
-
-//       data_.vVertexIdx_.push_back(vbase + t.i0);
-//       data_.vVertexIdx_.push_back(vbase + t.i1);
-//       data_.vVertexIdx_.push_back(vbase + t.i2);
-//       data_.vMeshesPerIdx_.push_back(mesh);
-//       data_.vMeshesPerIdx_.push_back(mesh);
-//       data_.vMeshesPerIdx_.push_back(mesh);
-//       triangleCount++;
-//     }
-//   }
-
-//   data_.vVertexCount_.push_back(vertexCount);
-//   data_.vIdxCount_.push_back(triangleCount);
-//   std::cout << "\n SoA read " << _filename << ": "
-//             << vertexCount << " vertices, "
-//             << triangleCount << " triangles"
-//             << std::flush;
-
-//   return true;
-// }
-
+/**
+ * @brief pre-reads scene to build SoA
+ */
 void Raytracer::pre_read_scene(const std::string &filename)
 {
-  iVertexCount_ = 0;
-  iTriangleCount_ = 0;
-  iMeshCount_ = 0;
+  // Data(concat Vectors) clean up
+  data_.meshes_.clear();
+  data_.vertexPos_.clear();
+  data_.vertexIdx_.clear();
+  data_.textureCoordinatesU_.clear();
+  data_.textureCoordinatesV_.clear();
+  data_.textureIdx_.clear();
+
+  data_.firstVertex_.clear();
+  data_.vertexCount_.clear();
+  data_.firstVertexIdx_.clear();
+  data_.vertexIdxCount_.clear();
+  data_.firstTextCoord_.clear();
+  data_.textCoordCount_.clear();
+  data_.firstTextIdx_.clear();
+  data_.textIdxCount_.clear();
+
+  meshCount_ = 0;
+  vertexCount_ = 0;
+  vertexIdxCount_ = 0;
+  textCoordCount_ = 0;
+  textIdxCount_ = 0;
   std::ifstream ifs(filename);
   if (!ifs) {
     std::cerr << "Cannot open file " << filename << std::endl;
@@ -184,24 +111,28 @@ void Raytracer::pre_read_scene(const std::string &filename)
       path = path.substr(0, path.find_last_of('/') + 1);
       fn = path + fn;
       pre_read_obj(fn.c_str());
-      iMeshCount_++;
+      meshCount_++;
     } else {
       continue;
     }
   }
   ifs.close();
-  data_.vVertexPos_.reserve(iVertexCount_);
-  data_.vVertexIdx_.reserve(iTriangleCount_*3);
-  data_.vMeshesPerIdx_.reserve(iTriangleCount_*3);
 
-  data_.vFirstVertex_.reserve(iMeshCount_);
-  data_.vVertexCount_.reserve(iMeshCount_);
-  data_.vFirstIdx_.reserve(iMeshCount_);
-  data_.vIdxCount_.reserve(iMeshCount_);
-
-  std::cout << "\ndone (" << iVertexCount_ << " Vertices)\n";
-  std::cout << "\ndone (" << iTriangleCount_ << " Triangles)\n";
-  std::cout << "\ndone (" << iMeshCount_ << " Meshes)\n";
+  /// SoA memory allocation
+  data_.meshes_.reserve(vertexIdxCount_);
+  data_.vertexPos_.reserve(vertexCount_);
+  data_.vertexIdx_.reserve(vertexIdxCount_);
+  data_.textureCoordinatesU_.reserve(textCoordCount_);
+  data_.textureCoordinatesV_.reserve(textCoordCount_);
+  data_.textureIdx_.reserve(textIdxCount_);
+  data_.firstVertex_.reserve(meshCount_);
+  data_.vertexCount_.reserve(meshCount_);
+  data_.firstVertexIdx_.reserve(meshCount_);
+  data_.vertexIdxCount_.reserve(meshCount_);
+  data_.firstTextCoord_.reserve(meshCount_);
+  data_.textCoordCount_.reserve(meshCount_);
+  data_.firstTextIdx_.reserve(meshCount_);
+  data_.textIdxCount_.reserve(meshCount_);
 }
 
 /**
@@ -211,7 +142,10 @@ void Raytracer::pre_read_scene(const std::string &filename)
 void Raytracer::pre_read_obj(const char* _filename)
 {
   int vertexCount = 0;
-  int triangleCount = 0;
+  int vertexIdxCount = 0;
+  int textCoordCount = 0;
+  int textIdxCount = 0;
+
   // open obj file
   std::ifstream ifs(_filename);
   if (!ifs) {
@@ -219,8 +153,14 @@ void Raytracer::pre_read_obj(const char* _filename)
     return;
   }
 
+  bool hasNormals = false;
+  bool hasUV = false;
+
   std::string filename(_filename);
   std::string line;
+  int counter = -1;
+  std::map<int, bool> uvDone;
+  std::vector<Image> textures;
   // parse line by line
   while (std::getline(ifs, line)) {
     // divide line into header (first word) and lineData (rest)
@@ -233,19 +173,46 @@ void Raytracer::pre_read_obj(const char* _filename)
       vertexCount++;
       continue;
     }
+
+    // uv-coordinates
+    if (header == "vt") {
+      hasUV = true;
+      textCoordCount++;
+      continue;
+    }
+
+    if (header == "vn") {
+      hasNormals = true;
+      continue;
+    }
+
+    // material file
+    if (header == "mtllib") {
+      continue;
+    }
+
+    // start of new material
+    if (header == "usemtl") {
+      continue;
+    }
+
     // faces
     if (header == "f") {
-      triangleCount++;
+      textIdxCount = textIdxCount + 3;
+      vertexIdxCount = vertexIdxCount + 3;
       continue;
     }
   }
-  iVertexCount_ = iVertexCount_ + vertexCount;
-  iTriangleCount_ = iTriangleCount_ + triangleCount;
-
+  vertexCount_ = vertexCount_ + vertexCount;
+  vertexIdxCount_ = vertexIdxCount_ + vertexIdxCount;
+  textCoordCount_ = textCoordCount_ + textCoordCount;
+  textIdxCount_ = textIdxCount_ + textIdxCount;
 
   std::cout << "\n  read " << _filename << ": "
             << vertexCount << " vertices, "
-            << triangleCount << " triangles"
+            << vertexIdxCount/3 << " triangles, "
+            << textCoordCount << " textCoordCount, "
+            << textIdxCount << " textIdxCount"
             << std::flush;
 }
 
@@ -329,7 +296,7 @@ vec3 Raytracer::lighting(const vec3 &point, const vec3 &normal,
 
   // diffuse: direct in, uniform out. dull / mat surfaces
   // specular refelction: directed in, directed out, shiny surfaces.
-  for (const Light &light : vLights_) {
+  for (const Light &light : lights_) {
 
     // compute diffuse and specular term
     double diffuse_ = diffuse(point, normal, light);

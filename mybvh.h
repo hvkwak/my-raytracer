@@ -14,7 +14,7 @@ public:
   ~BVH();
 
   void init(std::vector<Mesh*> &meshes);
-  void init_SoA(std::vector<Mesh*> &meshes, Data* data);
+  void initSoA(std::vector<Mesh*> &meshes, Data* data);
   bool isInitialized() const;
   bool intersectAABB(const Ray & ray, const vec3 & bb_min_, const vec3 & bb_max_) const;
   bool intersectBVH(const Ray &ray,
@@ -23,7 +23,7 @@ public:
                     vec3 &intersection_normal,
                     double &intersection_distance,
                     int nodeIdx) const;
-  bool intersectBVH_SoA(const Ray &ray,
+  bool intersectBVHSoA(const Ray &ray,
                         Material& intersection_material,
                         vec3 &intersection_point,
                         vec3 &intersection_normal,
@@ -47,13 +47,13 @@ private:
   void inplace_partition(int nodeIdx, double splitPos, int axis, int& i);
 
   /// SoA
-  void updateNodeBounds_SoA(int nodeIdx);
-  void subdivide_SoA(int nodeIdx, int depth);
-  void inplace_partition_SoA(int nodeIdx, double splitPos, int axis, int & i);
+  void updateNodeBoundsSoA(int nodeIdx);
+  void subdivideSoA(int nodeIdx, int depth);
+  void inplace_partitionSoA(int nodeIdx, double splitPos, int axis, int & i);
 
   /// median Splitters
   double median(int axis, int nodeIdx);
-  double median_SoA(int axis, int nodeIdx);
+  double medianSoA(int axis, int nodeIdx);
   double median_inplace(std::vector<double> &a);
 
   /// Nodes, Triangles, Meshes
