@@ -15,7 +15,7 @@
 #include <sstream>
 #include <map>
 #include <cfloat>
-#include "utils/Data.h"
+#include "mydata.h"
 
 /**
  * @brief returns if ray intersects a mesh bounding box
@@ -188,7 +188,8 @@ void Mesh::compute_normals() {
  *        intersection_diffuse - diffuse term of the intersection
  * @return true, if ray intersects the given triangle.
  */
-bool Mesh::intersect_triangle(const Triangle &triangle, const Ray &ray,
+bool Mesh::intersect_triangle(const Triangle &triangle,
+                              const Ray &ray,
                               vec3 &intersection_point,
                               vec3 &intersection_normal,
                               vec3 &intersection_diffuse,
@@ -233,9 +234,9 @@ bool Mesh::intersect_triangle(const Triangle &triangle, const Ray &ray,
   intersection_point = ray(t);
 
   // get Texture if it's there.
-  if (hasTexture_)
-    compute_texture(triangle.iuv0, triangle.iuv1, triangle.iuv2,
-                    intersection_diffuse, alpha, beta, gamma);
+  if (hasTexture_){
+    compute_texture(triangle.iuv0, triangle.iuv1, triangle.iuv2, intersection_diffuse, alpha, beta, gamma);
+  }
 
   if (draw_mode_ == FLAT) {
     // flat normal
@@ -249,4 +250,88 @@ bool Mesh::intersect_triangle(const Triangle &triangle, const Ray &ray,
   return true;
 }
 
-//=============================================================================
+
+bool Mesh::intersect_triangle_SoA(const vec3& p0,
+                                  const vec3& p1,
+                                  const vec3& p2,
+                                  const vec3& n,
+                                  const vec3& vn0,
+                                  const vec3& vn1,
+                                  const vec3& vn2,
+                                  const int& u0,
+                                  const int& u1,
+                                  const int& u2,
+                                  const int& v0,
+                                  const int& v1,
+                                  const int& v2,
+                                  const Ray &ray,
+                                  vec3 &intersection_point,
+                                  vec3 &intersection_normal,
+                                  vec3 &intersection_diffuse,
+                                  double &intersection_distance) const
+{
+  intersection_diffuse = material_.diffuse;
+
+  // rearranged `ray.origin + t*ray.dir = a*p0 + b*p1 + (1-a-b)*p2`
+  // [ p0.x - p2.x   p1.x - p2.x   -d.x ] [a]   [ray.origin.x]
+  // [ p0.y - p2.y   p1.y - p2.y   -d.y ]*[b] = [ray.origin.y]
+  // [ p0.z - p2.z   p1.z - p2.z   -d.z ] [t]   [ray.origin.z]
+  const vec3 column1 = {p0[0] - p2[0], p0[1] - p2[1], p0[2] - p2[2]};
+  const vec3 column2 = {p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]};
+  const vec3 column3 = {-ray.direction_[0], -ray.direction_[1], -ray.direction_[2]};
+  const vec3 column4 = {ray.origin_[0] - p2[0], ray.origin_[1] - p2[1], ray.origin_[2] - p2[2]};
+  const double S = det3D(column1, column2, column3);
+  const double alpha = det3D(column4, column2, column3) / S;
+  const double beta = det3D(column1, column4, column3) / S;
+  const double gamma = (1.0 - alpha - beta);
+  const double eps_shadow_acne = 1e-5;
+
+  // check if t is correct: positive && beyond shadow acne
+  const double t = det3D(column1, column2, column4) / S;
+  if (t <= eps_shadow_acne)
+    return false;
+
+  // check if it's inside
+  bool isInside = true; // shadow acne guard
+  isInside = isInside && 0.0 <= alpha && alpha <= 1.0;
+  isInside = isInside && 0.0 <= beta && beta <= 1.0;
+  isInside = isInside && 0.0 <= gamma && gamma <= 1.0;
+  if (!isInside)
+    return false;
+
+  // save intersection parameters
+  intersection_distance = t;
+  intersection_point = ray(t);
+
+  // get Texture if it's there.
+  if (hasTexture_){
+
+    // interpolate with barycentrics
+    double u = alpha * u0 + beta * u1 + gamma * u2;
+    double v = alpha * v0 + beta * v1 + gamma * v2;
+
+    // (optional) keep inside [0,1]
+    u = std::clamp(u, 0.0, 1.0);
+    v = std::clamp(v, 0.0, 1.0);
+
+    const unsigned int W = texture_.width();  // u
+    const unsigned int H = texture_.height(); // v
+
+    int px = std::round(u * (W - 1));
+    int py = std::round((1.0 - v) * (H - 1));
+
+    intersection_diffuse = texture_(px, py);
+  }
+
+
+  if (draw_mode_ == FLAT) {
+    // compute flat normal
+    intersection_normal = normalize(cross(p1 - p0, p2 - p0));
+  } else {
+    // TODO: compute normals SoA
+
+    // interpolate vertex normals
+    intersection_normal = alpha * vn0 + beta * vn1 + gamma * vn2;
+  }
+  return true;
+}

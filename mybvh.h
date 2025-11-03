@@ -2,7 +2,7 @@
 #include "utils/Ray.h"
 #include "utils/Material.h"
 #include "utils/Triangle.h"
-#include "utils/Data.h"
+#include "mydata.h"
 #include "Mesh.h"
 #include <math.h>
 

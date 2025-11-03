@@ -165,19 +165,27 @@ bool BVH::intersectBVHSoA(const Ray &ray,
     double t;
     vec3 p, n, d;
     for (int i = node.firstTriIdx; i < node.firstTriIdx + node.triCount; i++){
-      int vi = data_->vertexIdx_.at(i*3); // vertex index from Tri.Index
-      Mesh* mesh = data_->meshes_.at(vi);
-      // TODO: build a triangle
-      Triangle tri{.i0 = a,
-                   .i1 = b,
-                   .i2 = c,
-                   .normal = n,
-                   .iuv0 = u0,
-                   .iuv1 = u1,
-                   .iuv2 = u2,
-                   .centroid = c3,
-                   .meshIdx = m};
-      if (mesh->intersect_triangle(tri, ray, p, n, d, t)) {
+      int vi0 = data_->vertexIdx_.at(i * 3); // vertexIndex from Tri.Index
+      int vi1 = data_->vertexIdx_.at(i * 3 + 1);
+      int vi2 = data_->vertexIdx_.at(i * 3 + 2);
+      vec3 vp0 = data_->vertexPos_.at(vi0);     //
+      vec3 vp1 = data_->vertexPos_.at(vi1);     //
+      vec3 vp2 = data_->vertexPos_.at(vi2);     //
+      vec3 n = data_->normals_.at(i);           //
+      vec3 vn0 = data_->vertexNormals_.at(vi0); //
+      vec3 vn1 = data_->vertexNormals_.at(vi1); //
+      vec3 vn2 = data_->vertexNormals_.at(vi2); //
+      int iuv0 = data_->textureIdx_.at(i * 3);
+      int iuv1 = data_->textureIdx_.at(i * 3 + 1);
+      int iuv2 = data_->textureIdx_.at(i * 3 + 2);
+      double u0 = data_->textureCoordinatesU_.at(iuv0); //
+      double u1 = data_->textureCoordinatesU_.at(iuv1); //
+      double u2 = data_->textureCoordinatesU_.at(iuv2); //
+      double v0 = data_->textureCoordinatesV_.at(iuv0); //
+      double v1 = data_->textureCoordinatesV_.at(iuv1); //
+      double v2 = data_->textureCoordinatesV_.at(iuv2); //
+      Mesh* mesh = data_->meshes_.at(vi0);
+      if (mesh->intersect_triangle_SoA(vp0, vp1, vp2, n, vn0, vn1, vn2, u0, u1, u2, v0, v1, v2, ray, p, n, d, t)) {
         if (t < intersection_distance) {
           intersection_material = mesh->material_;
           intersection_material.diffuse = d;
@@ -370,22 +378,27 @@ void BVH::inplace_partitionSoA(int nodeIdx, double splitPos, int axis, int& i){
   BVHNode & node = bvhNodes_.at(nodeIdx);
   int j = i + node.triCount-1;
   while (i <= j){
-    int idx = (i + node.firstTriIdx) * 3;
-    int jdx = (j + node.firstTriIdx) * 3;
-    int vi = data_->vertexIdx_.at(idx); // vertex index from Tri.Index
-    vec3 v0 = data_->vertexPos_.at(vi + 0);
-    vec3 v1 = data_->vertexPos_.at(vi + 1);
-    vec3 v2 = data_->vertexPos_.at(vi + 2);
-    vec3 centroid = (v0 + v1 + v2) / 3.0;
+    int vi0 = data_->vertexIdx_.at(i*3);
+    int vi1 = data_->vertexIdx_.at(i*3+1);
+    int vi2 = data_->vertexIdx_.at(i*3+2);
+    vec3 vp0 = data_->vertexPos_.at(vi0); //
+    vec3 vp1 = data_->vertexPos_.at(vi1); //
+    vec3 vp2 = data_->vertexPos_.at(vi2); //
+    vec3 centroid = (vp0 + vp1 + vp2) / 3.0;
     if (centroid[axis] < splitPos){
       i++;
     }else{
-      std::swap(data_->vertexIdx_.at(idx), data_->vertexIdx_.at(jdx));
-      std::swap(data_->vertexIdx_.at(idx+1), data_->vertexIdx_.at(jdx+1));
-      std::swap(data_->vertexIdx_.at(idx+2), data_->vertexIdx_.at(jdx+2));
-      std::swap(data_->textureIdx_.at(idx), data_->textureIdx_.at(jdx));
-      std::swap(data_->textureIdx_.at(idx+1), data_->textureIdx_.at(jdx+1));
-      std::swap(data_->textureIdx_.at(idx+2), data_->textureIdx_.at(jdx+2));
+      /// Triangle Swap
+      int vj0 = data_->vertexIdx_.at(j * 3);
+      int vj1 = data_->vertexIdx_.at(j * 3 + 1);
+      int vj2 = data_->vertexIdx_.at(j * 3 + 2);
+      std::swap(data_->normals_.at(i), data_->normals_.at(j));
+      std::swap(data_->vertexIdx_.at(i*3), data_->vertexIdx_.at(j*3));
+      std::swap(data_->vertexIdx_.at(i*3+1), data_->vertexIdx_.at(j*3+1));
+      std::swap(data_->vertexIdx_.at(i*3+2), data_->vertexIdx_.at(j*3+2));
+      std::swap(data_->textureIdx_.at(i*3), data_->textureIdx_.at(j*3));
+      std::swap(data_->textureIdx_.at(i*3+1), data_->textureIdx_.at(j*3+1));
+      std::swap(data_->textureIdx_.at(i*3+2), data_->textureIdx_.at(j*3+2));
       j--;
     }
   }

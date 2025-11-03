@@ -21,17 +21,19 @@ void Raytracer::buildSoA(){
   std::cout << "buildSoA...";
   for (Mesh* mesh : meshes_){
 
-    // Vertex
+    // vbase
     int vbase = data_.vertexPos_.size();
     int vertexCount = mesh->vertices_.size();
     for (Vertex vertex : mesh->vertices_){
       data_.vertexPos_.push_back(vertex.position); // :(
+      data_.vertexNormals_.push_back(vertex.normal);
     }
     // data_.vertexPos_.insert(data_.vertexPos_.end(), mesh->vertices_.begin(), mesh->vertices_.end());
     data_.firstVertex_.push_back(vbase);
     data_.vertexCount_.push_back(vertexCount);
+    data_.meshes_.insert(data_.meshes_.end(), vertexCount, mesh);
 
-    // Vertex Indicies + Texture Indices
+    // ibase Vertex Indicies + Texture Indices
     int ibase = data_.vertexIdx_.size();
     int vertexIdxCount = mesh->triangles_.size()*3;
     for (Triangle triangle : mesh->triangles_){
@@ -41,14 +43,12 @@ void Raytracer::buildSoA(){
       data_.textureIdx_.push_back(triangle.iuv0);
       data_.textureIdx_.push_back(triangle.iuv1);
       data_.textureIdx_.push_back(triangle.iuv2);
+      data_.normals_.push_back(triangle.normal);
     }
     data_.firstVertexIdx_.push_back(ibase);
     data_.vertexIdxCount_.push_back(vertexIdxCount);
     data_.firstTextIdx_.push_back(ibase);
     data_.textIdxCount_.push_back(vertexIdxCount);
-
-    // Meshes
-    data_.meshes_.insert(data_.meshes_.end(), vertexIdxCount, mesh);
 
     // Texture Coordinates
     int tbase = data_.textureCoordinatesU_.size();
@@ -83,6 +83,10 @@ void Raytracer::pre_read_scene(const std::string &filename)
   data_.textCoordCount_.clear();
   data_.firstTextIdx_.clear();
   data_.textIdxCount_.clear();
+
+  data_.normals_.clear();
+  data_.vertexNormals_.clear();
+
 
   meshCount_ = 0;
   vertexCount_ = 0;
@@ -119,7 +123,7 @@ void Raytracer::pre_read_scene(const std::string &filename)
   ifs.close();
 
   /// SoA memory allocation
-  data_.meshes_.reserve(vertexIdxCount_);
+  data_.meshes_.reserve(vertexCount_);
   data_.vertexPos_.reserve(vertexCount_);
   data_.vertexIdx_.reserve(vertexIdxCount_);
   data_.textureCoordinatesU_.reserve(textCoordCount_);
@@ -133,6 +137,8 @@ void Raytracer::pre_read_scene(const std::string &filename)
   data_.textCoordCount_.reserve(meshCount_);
   data_.firstTextIdx_.reserve(meshCount_);
   data_.textIdxCount_.reserve(meshCount_);
+  data_.normals_.reserve(vertexIdxCount_/3);
+  data_.vertexNormals_.reserve(vertexCount_);
 }
 
 /**
