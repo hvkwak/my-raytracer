@@ -1,11 +1,11 @@
 # My Ray Tracer
-Implementation of ray tracing, BVH, and acceleration with CUDA based on the course *Computer Graphics (Graphische Datenverarbeitung)* @ Computer Graphics Group, TU Dortmund 
+Implementation of ray tracing (based on the course *Computer Graphics (Graphische Datenverarbeitung)* @ Computer Graphics Group, TU Dortmund), BVH, and acceleration with CUDA
 
 ## Note
 ⚠️ The official exercise codebase is **copyrighted** by the **Computer Graphics Group, TU Dortmund** and **is not included** in this repository.
 
 ## Updates
-- [2025-11-04] The project can now store mesh and triangle attributes in a SoA (Structure-of-Arrays) layout to enable coalesced memory access.
+- [2025-11-04] Mesh and Triangle attributes can now be saved in a SoA (Structure-of-Arrays) layout for coalesced memory access.
 - [2025-10-27] Implemented basic BVH (Bounding Volume Hierarchy) with my median-splitter. Ref: [jbikker](https://github.com/jbikker/bvh_article)
 - [2025-10-20] Implemented all TODOs in the course exercises (Phong lighting model, reflections, intersections, flat and Phong shading, textures, acceleration with axis-aligned bounding box (AABB) tests) for ray tracing.
 
