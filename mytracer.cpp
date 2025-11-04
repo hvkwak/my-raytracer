@@ -15,42 +15,44 @@
 #include <map>
 
 /**
- * @brief builds SoA based on the read meshes
+ * @brief Build Structure-of-Arrays (SoA) data layout from mesh objects
+ *
+ * Transforms mesh data from AoS to SoA format for GPU-friendly memory access
  */
 void Raytracer::buildSoA(){
   std::cout << "buildSoA...";
   for (Mesh* mesh : meshes_){
-
-    // vbase
+    // Copy vertex data
     int vbase = data_.vertexPos_.size();
     int vertexCount = mesh->vertices_.size();
     for (Vertex vertex : mesh->vertices_){
-      data_.vertexPos_.push_back(vertex.position); // :(
+      data_.vertexPos_.push_back(vertex.position);
       data_.vertexNormals_.push_back(vertex.normal);
     }
-    // data_.vertexPos_.insert(data_.vertexPos_.end(), mesh->vertices_.begin(), mesh->vertices_.end());
     data_.firstVertex_.push_back(vbase);
     data_.vertexCount_.push_back(vertexCount);
     data_.meshes_.insert(data_.meshes_.end(), vertexCount, mesh);
 
-    // Texture Coordinates
+    // Copy texture coordinates
     int tbase = data_.textureCoordinatesU_.size();
-    int textureCount = mesh->u_coordinates_.size(); // same as V
-    data_.textureCoordinatesU_.insert(data_.textureCoordinatesU_.end(), mesh->u_coordinates_.begin(), mesh->u_coordinates_.end());
-    data_.textureCoordinatesV_.insert(data_.textureCoordinatesV_.end(), mesh->v_coordinates_.begin(), mesh->v_coordinates_.end());
+    int textureCount = mesh->u_coordinates_.size();
+    data_.textureCoordinatesU_.insert(data_.textureCoordinatesU_.end(),
+                                      mesh->u_coordinates_.begin(), mesh->u_coordinates_.end());
+    data_.textureCoordinatesV_.insert(data_.textureCoordinatesV_.end(),
+                                      mesh->v_coordinates_.begin(), mesh->v_coordinates_.end());
     data_.firstTextIdx_.push_back(tbase);
     data_.textIdxCount_.push_back(textureCount);
 
-    // ibase Vertex Indicies + Texture Indices
+    // Copy triangle indices
     int ibase = data_.vertexIdx_.size();
-    int vertexIdxCount = mesh->triangles_.size()*3;
+    int vertexIdxCount = mesh->triangles_.size() * 3;
     for (Triangle triangle : mesh->triangles_){
-      data_.vertexIdx_.push_back(vbase+triangle.i0);
-      data_.vertexIdx_.push_back(vbase+triangle.i1);
-      data_.vertexIdx_.push_back(vbase+triangle.i2);
-      data_.textureIdx_.push_back(tbase+triangle.iuv0);
-      data_.textureIdx_.push_back(tbase+triangle.iuv1);
-      data_.textureIdx_.push_back(tbase+triangle.iuv2);
+      data_.vertexIdx_.push_back(vbase + triangle.i0);
+      data_.vertexIdx_.push_back(vbase + triangle.i1);
+      data_.vertexIdx_.push_back(vbase + triangle.i2);
+      data_.textureIdx_.push_back(tbase + triangle.iuv0);
+      data_.textureIdx_.push_back(tbase + triangle.iuv1);
+      data_.textureIdx_.push_back(tbase + triangle.iuv2);
       data_.normals_.push_back(triangle.normal);
     }
     data_.firstVertexIdx_.push_back(ibase);
@@ -256,67 +258,63 @@ double Raytracer::reflection(const vec3 &point, const vec3 &normal, const vec3 &
 }
 
 /**
- * @brief recursive trace()
+ * @brief Compute reflected ray contribution (recursive raytracing)
  *
- * @param ray: incoming ray for recursive trace()
- *        material: material of the object
- *        point: the point, of which the color should be determined
- *        normal: normal at the point
- * @return sub-raytraced color at the point
+ * @param ray Incoming ray
+ * @param material Material of the intersected object
+ * @param point Intersection point
+ * @param normal Surface normal at intersection
+ * @param depth Current recursion depth
+ * @return Reflected color contribution
  */
 vec3 Raytracer::subtrace(const Ray &ray, const Material &material, const vec3 &point, const vec3 &normal, const int depth){
-
-  /** \todo in trace() @ Raytracer.cpp */
   if (material.mirror > 0.0){
-    // generate reflected ray using normal, point, and ray.direction
-    // vec3 v = mirror(-ray.direction_, normal);
+    // Generate reflected ray
     vec3 v = reflect(ray.direction_, normal);
-    const double epsilon = 1e-4; // small offset to avoid self-intersection
-    Ray ray_ = Ray(point + epsilon * v, v);
-    return material.mirror * trace(ray_, depth + 1);
+    const double epsilon = 1e-4;  // Offset to avoid self-intersection
+    Ray reflected_ray = Ray(point + epsilon * v, v);
+    return material.mirror * trace(reflected_ray, depth + 1);
   }
   return {0, 0, 0};
 }
 
 /**
- * @brief Computes Phong lighting model (ambient + diffuse + specular) at a
- *        surface point (local illumination)
- * @param point: intersection point
- *        normal: intersection normal
- *        view: ray from intersection point to pixel
- *        material: material of intersection point
+ * @brief Compute Phong lighting model (ambient + diffuse + specular)
  *
- * @return RGB color/radiance of all light sources at point
+ * Computes local illumination at a surface point using the Phong shading model
+ *
+ * @param point Intersection point
+ * @param normal Surface normal at intersection
+ * @param view Direction from intersection point to viewer
+ * @param material Material properties
+ * @return Total color contribution from all light sources
  */
 vec3 Raytracer::lighting(const vec3 &point, const vec3 &normal,
                          const vec3 &view, const Material &material) const {
-  const double epsilon = 1e-4;  // small offset to avoid self-intersection
+  const double epsilon = 1e-4;  // Offset to avoid self-intersection
   vec3 color(0.0, 0.0, 0.0);
 
-  // ambient: uniform in, uniform out. approximates global light
-  // transport/exchange.
-  // note that ambience_ is ambient light.
-  color[0] += ambience_[0] * material.ambient[0]; // R
-  color[1] += ambience_[1] * material.ambient[1]; // G
-  color[2] += ambience_[2] * material.ambient[2]; // B
+  // Ambient component (approximates global illumination)
+  color[0] += ambience_[0] * material.ambient[0];
+  color[1] += ambience_[1] * material.ambient[1];
+  color[2] += ambience_[2] * material.ambient[2];
 
-  // diffuse: direct in, uniform out. dull / mat surfaces
-  // specular refelction: directed in, directed out, shiny surfaces.
+  // Process each light source
   for (const Light &light : lights_) {
-
-    // compute diffuse and specular term
+    // Compute diffuse and specular components
     double diffuse_ = diffuse(point, normal, light);
     double dot_rv = reflection(point, normal, view, light);
     double reflection_ = dot_rv;
+    // Compute specular exponent
     double i = 0.0;
-    while (i < material.shininess-1 ){
+    while (i < material.shininess - 1){
       reflection_ *= dot_rv;
       i += 1.0;
     }
 
+    // Shadow calculation
     bool isShadow = false;
     if (material.shadowable){
-      // compute hard shadow term
       Material shadow_material;
       vec3 shadow_point;
       vec3 shadow_normal;
@@ -328,11 +326,11 @@ vec3 Raytracer::lighting(const vec3 &point, const vec3 &normal,
                                          shadow_point, shadow_normal, shadow_t);
       isShadow = isIntersect && shadow_t < light_distance && 0.0 < shadow_t;
     }
+
+    // Accumulate light contribution if not in shadow
     color[0] += light.color[0] * !isShadow * (material.diffuse[0] * diffuse_ + material.specular[0] * reflection_);
     color[1] += light.color[1] * !isShadow * (material.diffuse[1] * diffuse_ + material.specular[1] * reflection_);
     color[2] += light.color[2] * !isShadow * (material.diffuse[2] * diffuse_ + material.specular[2] * reflection_);
   }
   return color;
 }
-
-//=============================================================================

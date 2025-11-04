@@ -1,3 +1,11 @@
+// ============================================================================
+// Computer Graphics - TU Dortmund
+// Implementation by Hyovin Kwak (Instructor: Prof. Dr. Mario Botsch)
+//
+// This file contains my solutions to the course exercises.
+// Note: The original exercise framework/codebase is not published in this repo.
+// ============================================================================
+
 #include "./common/common.h"
 #include <cuda_runtime.h>
 #include <stdio.h>
@@ -9,7 +17,7 @@
 #include "utils/Object.h"
 
 void Raytracer::cudaInit(void){
-    // Init Device
+    // Initialize CUDA device
     int dev = 0;
     cudaDeviceProp deviceProp;
     CHECK(cudaGetDeviceProperties(&deviceProp, dev));

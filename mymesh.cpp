@@ -18,15 +18,13 @@
 #include "mydata.h"
 
 /**
- * @brief returns if ray intersects a mesh bounding box
- *        based on Slab method
+ * @brief Test ray intersection with mesh bounding box using slab method
  *
- * @param ray - ray, of which intersection is tested
- * @return true, if ray intersects a mesh bounding box
+ * @param ray The ray to test
+ * @return true if ray intersects the mesh bounding box
  */
 bool Mesh::intersect_bounding_box(const Ray &ray) const {
-
-  /** \todo in Mesh.cpp*/
+  // Slab method for ray-AABB intersection
   double tmin = (bb_min_[0] - ray.origin_[0]) / ray.direction_[0];
   double tmax = (bb_max_[0] - ray.origin_[0]) / ray.direction_[0];
 
@@ -56,22 +54,19 @@ bool Mesh::intersect_bounding_box(const Ray &ray) const {
 
   tmax = std::min(tmax, tzmax);
 
-  return tmax > 1e-5; // Check if intersection is in front of ray
+  return tmax > 1e-5;  // Ensure intersection is in front of ray
 }
 
-//-----------------------------------------------------------------------------
-
-
 /**
- * @brief computes texture coordinates
+ * @brief Compute texture color using barycentric interpolation
  *
- * @param iuv0 - index for texture of the first corner of triangle
- *        iuv1 - index for texture of the second corner of triangle
- *        iuv2 - index for texture of the last corner of triangle
- *        intersection_defuse - diffuse lighting term
- *        alpha, beta, gamma: barycentric coordinates
- *
- * @return
+ * @param iuv0 Texture coordinate index for first triangle vertex
+ * @param iuv1 Texture coordinate index for second triangle vertex
+ * @param iuv2 Texture coordinate index for third triangle vertex
+ * @param intersection_diffuse Resulting texture color (output)
+ * @param alpha Barycentric coordinate for first vertex
+ * @param beta Barycentric coordinate for second vertex
+ * @param gamma Barycentric coordinate for third vertex
  */
 void Mesh::compute_texture(int iuv0,
                            int iuv1,
@@ -81,21 +76,19 @@ void Mesh::compute_texture(int iuv0,
                            const double & beta,
                            const double & gamma) const
 {
-  /** \todo in Mesh.cpp*/
-
-  // interpolate with barycentrics
+  // Interpolate texture coordinates with barycentric weights
   double u = alpha * u_coordinates_[iuv0] + beta * u_coordinates_[iuv1] +
              gamma * u_coordinates_[iuv2];
   double v = alpha * v_coordinates_[iuv0] + beta * v_coordinates_[iuv1] +
              gamma * v_coordinates_[iuv2];
 
-  // (optional) keep inside [0,1]
+  // Clamp to [0,1] range
   u = std::clamp(u, 0.0, 1.0);
   v = std::clamp(v, 0.0, 1.0);
 
-  const unsigned int W = texture_.width();  // u
-  const unsigned int H = texture_.height(); // v
-
+  // Map to texture pixel coordinates
+  const unsigned int W = texture_.width();
+  const unsigned int H = texture_.height();
   int px = std::round(u * (W - 1));
   int py = std::round((1.0 - v) * (H - 1));
 
@@ -103,25 +96,20 @@ void Mesh::compute_texture(int iuv0,
 }
 
 /**
- * @brief computes normals of triangular mesh
- *        1. computes triangle face normals
- *        2. computes vertex normals
+ * @brief Compute mesh normals
  *
- * @param
- * @return
+ * First computes per-face normals, then accumulates them to vertex normals
+ * using angle-weighted averaging for better quality
  */
 void Mesh::compute_normals() {
-
-  /** \todo in Mesh.cpp*/
-
   const double eps = 1e-12;
 
-  // initialize vertex normals to zero
+  // Initialize vertex normals to zero
   for (Vertex &v : vertices_) {
     v.normal = vec3(0, 0, 0);
   }
 
-  // compute triangle normals
+  // Compute triangle face normals
   for (Triangle &t : triangles_) {
     const vec3 &p0 = vertices_[t.i0].position;
     const vec3 &p1 = vertices_[t.i1].position;
@@ -129,11 +117,9 @@ void Mesh::compute_normals() {
     t.normal = normalize(cross(p1 - p0, p2 - p0));
   }
 
-  // compute vertex normals
-  // per triangle update all three vertices normals
+  // Compute vertex normals with angle-weighted averaging
   for (Triangle &t : triangles_) {
-
-    // positions
+    // Vertex positions
     const vec3 &p0 = vertices_[t.i0].position;
     const vec3 &p1 = vertices_[t.i1].position;
     const vec3 &p2 = vertices_[t.i2].position;
@@ -171,22 +157,22 @@ void Mesh::compute_normals() {
     }
   }
 
-  // Final normalize exactly once per vertex
+  // Normalize vertex normals
   for (Vertex &v : vertices_) {
     v.normal = normalize(v.normal);
   }
 }
 
-//-----------------------------------------------------------------------------
 /**
- * @brief returns true, if ray intersects the given triangle
+ * @brief Test ray-triangle intersection (AoS version)
  *
- * @param triangle - the triangle, of which intersection will be tested
- *        ray      - ray
- *        intersection_point - ray-triangle intersection point
- *        intersection_normal - normal at theh intersection
- *        intersection_diffuse - diffuse term of the intersection
- * @return true, if ray intersects the given triangle.
+ * @param triangle Triangle to test
+ * @param ray Ray to test
+ * @param intersection_point Intersection point (output)
+ * @param intersection_normal Normal at intersection (output)
+ * @param intersection_diffuse Diffuse color at intersection (output)
+ * @param intersection_distance Distance to intersection (output)
+ * @return true if ray intersects the triangle
  */
 bool Mesh::intersect_triangle(const Triangle &triangle,
                               const Ray &ray,
@@ -194,17 +180,14 @@ bool Mesh::intersect_triangle(const Triangle &triangle,
                               vec3 &intersection_normal,
                               vec3 &intersection_diffuse,
                               double &intersection_distance) const {
-  /** \todo in Mesh.cpp*/
-
   intersection_diffuse = material_.diffuse;
   const vec3 &p0 = vertices_[triangle.i0].position;
   const vec3 &p1 = vertices_[triangle.i1].position;
   const vec3 &p2 = vertices_[triangle.i2].position;
 
-  // rearranged `ray.origin + t*ray.dir = a*p0 + b*p1 + (1-a-b)*p2`
-  // [ p0.x - p2.x   p1.x - p2.x   -d.x ] [a]   [ray.origin.x]
-  // [ p0.y - p2.y   p1.y - p2.y   -d.y ]*[b] = [ray.origin.y]
-  // [ p0.z - p2.z   p1.z - p2.z   -d.z ] [t]   [ray.origin.z]
+  // Solve for barycentric coordinates and ray parameter t
+  // Equation: ray.origin + t*ray.dir = alpha*p0 + beta*p1 + gamma*p2
+  // where gamma = 1 - alpha - beta
   const vec3 column1 = {p0[0] - p2[0], p0[1] - p2[1], p0[2] - p2[2]};
   const vec3 column2 = {p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]};
   const vec3 column3 = {-ray.direction_[0], -ray.direction_[1], -ray.direction_[2]};
@@ -214,35 +197,33 @@ bool Mesh::intersect_triangle(const Triangle &triangle,
   const double beta = det3D(column1, column4, column3) / S;
   const double gamma = (1.0 - alpha - beta);
   const double eps_shadow_acne = 1e-5;
-  // TODO: more eps values for barycentric coordiantes?
 
-  // check if t is correct: positive && beyond shadow acne
+  // Check if intersection is in front of ray (avoid shadow acne)
   const double t = det3D(column1, column2, column4) / S;
   if (t <= eps_shadow_acne)
     return false;
 
-  // check if it's inside
-  bool isInside = true; // shadow acne guard
-  isInside = isInside && 0.0 <= alpha && alpha <= 1.0;
-  isInside = isInside && 0.0 <= beta && beta <= 1.0;
-  isInside = isInside && 0.0 <= gamma && gamma <= 1.0;
+  // Check if barycentric coordinates are valid (point is inside triangle)
+  bool isInside = (0.0 <= alpha && alpha <= 1.0) &&
+                  (0.0 <= beta && beta <= 1.0) &&
+                  (0.0 <= gamma && gamma <= 1.0);
   if (!isInside)
     return false;
 
-  // save intersection parameters
+  // Compute intersection parameters
   intersection_distance = t;
   intersection_point = ray(t);
 
-  // get Texture if it's there.
+  // Apply texture if available
   if (hasTexture_){
-    compute_texture(triangle.iuv0, triangle.iuv1, triangle.iuv2, intersection_diffuse, alpha, beta, gamma);
+    compute_texture(triangle.iuv0, triangle.iuv1, triangle.iuv2,
+                    intersection_diffuse, alpha, beta, gamma);
   }
 
+  // Compute normal (flat or interpolated)
   if (draw_mode_ == FLAT) {
-    // flat normal
     intersection_normal = triangle.normal;
   } else {
-    // interpolate vertex normals
     intersection_normal = alpha * vertices_[triangle.i0].normal +
                           beta * vertices_[triangle.i1].normal +
                           gamma * vertices_[triangle.i2].normal;
@@ -250,7 +231,23 @@ bool Mesh::intersect_triangle(const Triangle &triangle,
   return true;
 }
 
-
+/**
+ * @brief Test ray-triangle intersection (SoA version)
+ *
+ * All triangle data is passed as parameters rather than stored in a Triangle struct
+ * This version is optimized for GPU-friendly memory layouts
+ *
+ * @param p0,p1,p2 Triangle vertex positions
+ * @param n Face normal
+ * @param vn0,vn1,vn2 Vertex normals
+ * @param u0,u1,u2,v0,v1,v2 Texture coordinates
+ * @param ray Ray to test
+ * @param intersection_point Intersection point (output)
+ * @param intersection_normal Normal at intersection (output)
+ * @param intersection_diffuse Diffuse color at intersection (output)
+ * @param intersection_distance Distance to intersection (output)
+ * @return true if ray intersects the triangle
+ */
 bool Mesh::intersect_triangle_SoA(const vec3& p0,
                                   const vec3& p1,
                                   const vec3& p2,
@@ -270,14 +267,10 @@ bool Mesh::intersect_triangle_SoA(const vec3& p0,
                                   vec3 &intersection_diffuse,
                                   double &intersection_distance) const
 {
-  std::cout << "intersectTriangleSoA" << std::endl;
-
   intersection_diffuse = material_.diffuse;
 
-  // rearranged `ray.origin + t*ray.dir = a*p0 + b*p1 + (1-a-b)*p2`
-  // [ p0.x - p2.x   p1.x - p2.x   -d.x ] [a]   [ray.origin.x]
-  // [ p0.y - p2.y   p1.y - p2.y   -d.y ]*[b] = [ray.origin.y]
-  // [ p0.z - p2.z   p1.z - p2.z   -d.z ] [t]   [ray.origin.z]
+  // Solve for barycentric coordinates and ray parameter t
+  // Same algorithm as AoS version
   const vec3 column1 = {p0[0] - p2[0], p0[1] - p2[1], p0[2] - p2[2]};
   const vec3 column2 = {p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]};
   const vec3 column3 = {-ray.direction_[0], -ray.direction_[1], -ray.direction_[2]};
@@ -305,34 +298,29 @@ bool Mesh::intersect_triangle_SoA(const vec3& p0,
   intersection_distance = t;
   intersection_point = ray(t);
 
-  // get Texture if it's there.
+  // Apply texture if available
   if (hasTexture_){
-
-    // interpolate with barycentrics
+    // Interpolate texture coordinates with barycentric weights
     double u = alpha * u0 + beta * u1 + gamma * u2;
     double v = alpha * v0 + beta * v1 + gamma * v2;
 
-    // (optional) keep inside [0,1]
+    // Clamp to [0,1] range
     u = std::clamp(u, 0.0, 1.0);
     v = std::clamp(v, 0.0, 1.0);
 
-    const unsigned int W = texture_.width();  // u
-    const unsigned int H = texture_.height(); // v
-
+    // Map to texture pixel coordinates
+    const unsigned int W = texture_.width();
+    const unsigned int H = texture_.height();
     int px = std::round(u * (W - 1));
     int py = std::round((1.0 - v) * (H - 1));
 
     intersection_diffuse = texture_(px, py);
   }
 
-
+  // Compute normal (flat or interpolated)
   if (draw_mode_ == FLAT) {
-    // compute flat normal
     intersection_normal = normalize(cross(p1 - p0, p2 - p0));
   } else {
-    // TODO: compute normals SoA
-
-    // interpolate vertex normals
     intersection_normal = alpha * vn0 + beta * vn1 + gamma * vn2;
   }
   return true;
