@@ -5,7 +5,7 @@ Implementation of ray tracing, BVH, and acceleration with CUDA based on the cour
 ⚠️ The official exercise codebase is **copyrighted** by the **Computer Graphics Group, TU Dortmund** and **is not included** in this repository.
 
 ## Updates
-- [2025-11-04] The project can now store mesh and triangle attributes in a SoA (Structure-of-Arrays) layout to maximize spatial locality and parallel efficiency.
+- [2025-11-04] The project can now store mesh and triangle attributes in a SoA (Structure-of-Arrays) layout to enable coalesced memory access.
 - [2025-10-27] Implemented basic BVH (Bounding Volume Hierarchy) with my median-splitter. Ref: [jbikker](https://github.com/jbikker/bvh_article)
 - [2025-10-20] Implemented all TODOs in the course exercises (Phong lighting model, reflections, intersections, flat and Phong shading, textures, acceleration with axis-aligned bounding box (AABB) tests) for ray tracing.
 
