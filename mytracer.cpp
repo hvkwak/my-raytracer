@@ -89,7 +89,6 @@ void Raytracer::pre_read_scene(const std::string &filename)
   data_.normals_.clear();
   data_.vertexNormals_.clear();
 
-
   meshCount_ = 0;
   vertexCount_ = 0;
   vertexIdxCount_ = 0;
@@ -216,7 +215,7 @@ void Raytracer::pre_read_obj(const char* _filename)
   textCoordCount_ = textCoordCount_ + textCoordCount;
   textIdxCount_ = textIdxCount_ + textIdxCount;
 
-  std::cout << "\n  read " << _filename << ": "
+  std::cout << "\n  pre-read " << _filename << ": "
             << vertexCount << " vertices, "
             << vertexIdxCount/3 << " triangles, "
             << textCoordCount << " textCoordCount, "

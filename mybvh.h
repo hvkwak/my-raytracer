@@ -96,17 +96,19 @@ public:
 private:
 
   /**
-   * @brief BVH node structure
+   * @brief BVH node structure for AoS
    *
    * Internal nodes have triCount == 0 and store leftChildIdx (right is leftChildIdx + 1)
    * Leaf nodes have triCount > 0 and store firstTriIdx to triangle data
    */
   struct BVHNode {
     vec3 bb_min_, bb_max_;  ///< Axis-aligned bounding box
-    int leftChildIdx;       ///< Left child index (right child is leftChildIdx + 1)
-    int firstTriIdx;        ///< First triangle index (for leaf nodes)
-    int triCount;           ///< Number of triangles (0 for internal nodes)
+    int leftChildIdx_;       ///< Left child index (right child is leftChildIdx + 1)
+    int firstTriIdx_;        ///< First triangle index (for leaf nodes)
+    int triCount_;           ///< Number of triangles (0 for internal nodes)
   };
+
+
 
   // ===== AoS-specific methods =====
 
@@ -166,7 +168,7 @@ private:
 
   // ===== Data members =====
 
-  std::vector<BVHNode> bvhNodes_;      ///< BVH node pool
+  std::vector<BVHNode> bvhNodes_;      ///< BVH node pool for AoS
   std::vector<Triangle*> triangles_;   ///< Triangle pointers (AoS version)
   std::vector<Mesh*> meshes_;          ///< Mesh pointers
 
@@ -176,6 +178,16 @@ private:
   bool isInitialized_ = false;         ///< Initialization flag
 
   Data* data_;                         ///< SoA data structure pointer
+
+  // BVHNode attributes in SoA
+  struct BVHNodes_SoA {
+    std::vector<vec3> bb_min_;
+    std::vector<vec3> bb_max_;
+    std::vector<int> leftChildIdx_;
+    std::vector<int> firstTriIdx_;
+    std::vector<int> triCount_;
+  };
+  BVHNodes_SoA bvhNodesSoA_;
 };
 
 // ===== Utility Functions =====================================================
