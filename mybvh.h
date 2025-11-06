@@ -16,6 +16,7 @@
 #include "mydata.h"
 #include "Mesh.h"
 #include <math.h>
+#include <cfloat>
 
 /**
  * @brief Bounding Volume Hierarchy for accelerated ray-triangle intersection
@@ -55,9 +56,10 @@ public:
    * @param ray The ray to test
    * @param bb_min_ Minimum corner of AABB
    * @param bb_max_ Maximum corner of AABB
-   * @return true if ray intersects the AABB
+   * @param max_distance Maximum distance for culling (default DBL_MAX)
+   * @return true if ray intersects the AABB and intersection is closer than max_distance
    */
-  bool intersectAABB(const Ray & ray, const vec3 & bb_min_, const vec3 & bb_max_) const;
+  bool intersectAABB(const Ray & ray, const vec3 & bb_min_, const vec3 & bb_max_, double max_distance = DBL_MAX) const;
 
   /**
    * @brief Traverse BVH and find closest ray-triangle intersection (AoS version)
@@ -90,8 +92,7 @@ public:
                         Material& intersection_material,
                         vec3 &intersection_point,
                         vec3 &intersection_normal,
-                        double &intersection_distance,
-                        int nodeIdx) const;
+                        double &intersection_distance) const;
 
 private:
 

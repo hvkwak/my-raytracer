@@ -95,7 +95,7 @@ bool BVH::isInitialized() const{
   return isInitialized_;
 }
 
-bool BVH::intersectAABB(const Ray & ray, const vec3 & bb_min_, const vec3 & bb_max_) const{
+bool BVH::intersectAABB(const Ray & ray, const vec3 & bb_min_, const vec3 & bb_max_, double max_distance) const{
   // Slab method for ray-AABB intersection
   double tmin = (bb_min_[0] - ray.origin_[0]) / ray.direction_[0];
   double tmax = (bb_max_[0] - ray.origin_[0]) / ray.direction_[0];
@@ -124,9 +124,14 @@ bool BVH::intersectAABB(const Ray & ray, const vec3 & bb_min_, const vec3 & bb_m
   if ((tmin > tzmax) || (tzmin > tmax))
     return false;
 
+  tmin = std::max(tmin, tzmin);
   tmax = std::min(tmax, tzmax);
+  bool is_tmin_found = tmin < max_distance;
+  if (is_tmin_found){
+    max_distance = tmin;
+  }
 
-  return tmax > 1e-5;  // Ensure intersection is in front of ray
+  return tmax > 1e-5 && is_tmin_found;  // Cull if farther than current closest hit
 }
 
 
@@ -136,10 +141,10 @@ bool BVH::intersectBVH(const Ray& ray,
                        vec3 &intersection_normal,
                        double &intersection_distance,
                        int nodeIdx) const{
-  const BVHNode & node = bvhNodes_.at(nodeIdx);
+  const BVHNode & node = bvhNodes_[nodeIdx];
 
   // Early exit if ray doesn't intersect node's bounding box
-  if (!intersectAABB(ray, node.bb_min_, node.bb_max_)){
+  if (!intersectAABB(ray, node.bb_min_, node.bb_max_, intersection_distance)){
     return false;
   }
 
@@ -162,89 +167,149 @@ bool BVH::intersectBVH(const Ray& ray,
     }
     return (intersection_distance < DBL_MAX);
   } else {
-    // Internal node - recursively test both children
-    bool isLeft = intersectBVH(ray,intersection_material,intersection_point,intersection_normal, intersection_distance, node.leftChildIdx_);
-    bool isRight = intersectBVH(ray,intersection_material,intersection_point,intersection_normal, intersection_distance, node.leftChildIdx_ + 1);
-    return isLeft || isRight;
+    // Internal node - test children only if AABB hits
+    bool hitLeft = false, hitRight = false;
+
+    if (intersectAABB(ray,
+                      bvhNodes_[node.leftChildIdx_].bb_min_,
+                      bvhNodes_[node.leftChildIdx_].bb_max_,
+                      intersection_distance)) {
+      hitLeft = intersectBVH(ray,
+                             intersection_material,
+                             intersection_point,
+                             intersection_normal,
+                             intersection_distance,
+                             node.leftChildIdx_);
+    }
+
+    if (intersectAABB(ray,
+                      bvhNodes_[node.leftChildIdx_ + 1].bb_min_,
+                      bvhNodes_[node.leftChildIdx_ + 1].bb_max_,
+                      intersection_distance)) {
+      hitRight = intersectBVH(ray,
+                              intersection_material,
+                              intersection_point,
+                              intersection_normal,
+                              intersection_distance,
+                              node.leftChildIdx_ + 1);
+    }
+
+    return hitLeft || hitRight;
   }
 }
 
 bool BVH::intersectBVHSoA(const Ray &ray,
-                           Material& intersection_material,
-                           vec3 &intersection_point,
-                           vec3 &intersection_normal,
-                           double &intersection_distance,
-                           int nodeIdx) const {
+                          Material& intersection_material,
+                          vec3 &intersection_point,
+                          vec3 &intersection_normal,
+                          double &intersection_distance) const {
 
-  // Cache node data once
-  const vec3& bb_min = bvhNodesSoA_.bb_min_[nodeIdx];
-  const vec3& bb_max = bvhNodesSoA_.bb_max_[nodeIdx];
-  const int triCount = bvhNodesSoA_.triCount_[nodeIdx];
-  const int firstTriIdx = bvhNodesSoA_.firstTriIdx_[nodeIdx];
-  const int leftChildIdx = bvhNodesSoA_.leftChildIdx_[nodeIdx];
+  int stack[64];
+  int stackPtr = 0;
 
-  // Early exit if ray doesn't intersect node's bounding box
-  if (!intersectAABB(ray, bb_min, bb_max)){
-    return false;
-  }
+  stack[stackPtr++] = rootNodeIdx_;
+  bool hit = false;
 
-  if (triCount > 0) {
-    // Leaf node - test all triangles (SoA data layout)
-    double t;
-    vec3 p, n, d;
-    for (int i = firstTriIdx; i < firstTriIdx + triCount; i++){
-      // Fetch vertex indices
-      int vi0 = data_->vertexIdx_[i*3];
-      int vi1 = data_->vertexIdx_[i*3+1];
-      int vi2 = data_->vertexIdx_[i*3+2];
+  while (stackPtr > 0){
 
-      // Fetch vertex positions and normals
-      vec3 vp0 = data_->vertexPos_[vi0];
-      vec3 vp1 = data_->vertexPos_[vi1];
-      vec3 vp2 = data_->vertexPos_[vi2];
-      vec3 normal = data_->normals_[i];
-      vec3 vn0 = data_->vertexNormals_[vi0];
-      vec3 vn1 = data_->vertexNormals_[vi1];
-      vec3 vn2 = data_->vertexNormals_[vi2];
+    // Pop node from stack
+    int nodeIdx = stack[--stackPtr];
 
-      Mesh* mesh = data_->meshes_[vi0];
+    // Cache node data once
+    vec3 bb_min = bvhNodesSoA_.bb_min_[nodeIdx];
+    vec3 bb_max = bvhNodesSoA_.bb_max_[nodeIdx];
+    int triCount = bvhNodesSoA_.triCount_[nodeIdx];
+    int firstTriIdx = bvhNodesSoA_.firstTriIdx_[nodeIdx];
+    int leftChildIdx = bvhNodesSoA_.leftChildIdx_[nodeIdx];
 
-      // Fetch texture coordinates if available
-      double u0 = 0, u1 = 0, u2 = 0;
-      double v0 = 0, v1 = 0, v2 = 0;
-      if (mesh->hasTexture_){
-        int iuv0 = data_->textureIdx_[i*3];
-        int iuv1 = data_->textureIdx_[i*3+1];
-        int iuv2 = data_->textureIdx_[i*3+2];
-        u0 = data_->textureCoordinatesU_[iuv0];
-        u1 = data_->textureCoordinatesU_[iuv1];
-        u2 = data_->textureCoordinatesU_[iuv2];
-        v0 = data_->textureCoordinatesV_[iuv0];
-        v1 = data_->textureCoordinatesV_[iuv1];
-        v2 = data_->textureCoordinatesV_[iuv2];
-      }
+    // Early exit if ray doesn't intersect node's bounding box
+    if (!intersectAABB(ray, bb_min, bb_max)) {
+      continue;
+    }
 
-      // Intersect triangle
-      if (mesh->intersect_triangle_SoA(vp0, vp1, vp2, normal, vn0, vn1, vn2,
-                                        u0, u1, u2, v0, v1, v2,
-                                        ray, p, n, d, t)) {
-        if (t < intersection_distance) {
-          intersection_material = mesh->material_;
-          intersection_material.diffuse = d;
-          intersection_point = p;
-          intersection_normal = n;
-          intersection_distance = t;
+    if (triCount > 0) {
+      // Leaf node - test all triangles (SoA data layout)
+      double t;
+      vec3 p, n, d;
+      for (int i = firstTriIdx; i < firstTriIdx + triCount; i++) {
+        // Fetch vertex indices
+        int vi0 = data_->vertexIdx_[i * 3];
+        int vi1 = data_->vertexIdx_[i * 3 + 1];
+        int vi2 = data_->vertexIdx_[i * 3 + 2];
+
+        // Fetch vertex positions and normals
+        vec3 vp0 = data_->vertexPos_[vi0];
+        vec3 vp1 = data_->vertexPos_[vi1];
+        vec3 vp2 = data_->vertexPos_[vi2];
+        vec3 normal = data_->normals_[i];
+        vec3 vn0 = data_->vertexNormals_[vi0];
+        vec3 vn1 = data_->vertexNormals_[vi1];
+        vec3 vn2 = data_->vertexNormals_[vi2];
+
+        Mesh *mesh = data_->meshes_[vi0];
+
+        // Fetch texture coordinates if available
+        double u0 = 0, u1 = 0, u2 = 0;
+        double v0 = 0, v1 = 0, v2 = 0;
+        if (mesh->hasTexture_) {
+          int iuv0 = data_->textureIdx_[i * 3];
+          int iuv1 = data_->textureIdx_[i * 3 + 1];
+          int iuv2 = data_->textureIdx_[i * 3 + 2];
+          u0 = data_->textureCoordinatesU_[iuv0];
+          u1 = data_->textureCoordinatesU_[iuv1];
+          u2 = data_->textureCoordinatesU_[iuv2];
+          v0 = data_->textureCoordinatesV_[iuv0];
+          v1 = data_->textureCoordinatesV_[iuv1];
+          v2 = data_->textureCoordinatesV_[iuv2];
+        }
+
+        // Intersect triangle
+        if (mesh->intersect_triangle_SoA(vp0, vp1, vp2, normal, vn0, vn1, vn2,
+                                         u0, u1, u2, v0, v1, v2, ray, p, n, d,
+                                         t)) {
+          if (t < intersection_distance) {
+            intersection_material = mesh->material_;
+            intersection_material.diffuse = d;
+            intersection_point = p;
+            intersection_normal = n;
+            intersection_distance = t;
+            hit = true;
+          }
         }
       }
+    } else {
+      double tminLeft, tminRight;
+
+      // Cache node data once
+      vec3 bb_min_left = bvhNodesSoA_.bb_min_[leftChildIdx];
+      vec3 bb_max_left = bvhNodesSoA_.bb_max_[leftChildIdx];
+      bool hitLeft = intersectAABB(ray, bb_min_left, bb_max_left);
+
+      vec3 bb_min_right = bvhNodesSoA_.bb_min_[leftChildIdx+1];
+      vec3 bb_max_right = bvhNodesSoA_.bb_max_[leftChildIdx+1];
+      bool hitRight = intersectAABB(ray, bb_min_right, bb_max_right);
+
+      if (hitLeft && hitRight){
+        if (tminLeft < tminRight){
+          // Internal node - push children to stack: no recursion
+          stack[stackPtr++] = leftChildIdx + 1; // right child
+          stack[stackPtr++] = leftChildIdx; // left child will be visited first.
+        }else{
+          stack[stackPtr++] = leftChildIdx; // right child visited first
+          stack[stackPtr++] = leftChildIdx+1; // left child
+        }
+      }else if (hitLeft){
+        stack[stackPtr++] = leftChildIdx; // left child will be visited first.
+      }else if (hitRight){
+        stack[stackPtr++] = leftChildIdx+1; // left child will be visited first.
+      }
+
+
     }
-    return (intersection_distance < DBL_MAX);
-  } else {
-    // Internal node - recursively test both children
-    bool isLeft = intersectBVHSoA(ray,intersection_material,intersection_point,intersection_normal, intersection_distance, leftChildIdx);
-    bool isRight = intersectBVHSoA(ray,intersection_material,intersection_point,intersection_normal, intersection_distance, leftChildIdx+1);
-    return isLeft || isRight;
   }
+  return hit;
 }
+
 // =============================================================================
 // Private Methods - AoS Version
 // =============================================================================
@@ -269,7 +334,7 @@ void BVH::getData(std::vector<Mesh*> &meshes){
 }
 
 void BVH::updateNodeBounds(int nodeIdx){
-  BVHNode& node = bvhNodes_.at(nodeIdx);
+  BVHNode& node = bvhNodes_[nodeIdx];
   node.bb_min_ = vec3(DBL_MAX);
   node.bb_max_ = vec3(-DBL_MAX);
 
@@ -288,7 +353,7 @@ void BVH::updateNodeBounds(int nodeIdx){
 
 
 void BVH::subdivide(int nodeIdx, int depth){
-  BVHNode& node = bvhNodes_.at(nodeIdx);
+  BVHNode& node = bvhNodes_[nodeIdx];
 
   // Terminate recursion if node has few triangles
   if (node.triCount_ <= 2) return;
@@ -324,7 +389,7 @@ void BVH::subdivide(int nodeIdx, int depth){
 }
 
 void BVH::inplace_partition(int nodeIdx, double splitPos, int axis, int & i){
-  BVHNode & node = bvhNodes_.at(nodeIdx);
+  BVHNode & node = bvhNodes_[nodeIdx];
   int j = i + node.triCount_-1;
   while (i <= j){
     if (triangles_.at(i)->centroid[axis] < splitPos){
@@ -345,7 +410,7 @@ void BVH::updateNodeBoundsSoA(int nodeIdx){
   bvhNodesSoA_.bb_min_[nodeIdx] = vec3(DBL_MAX);
   bvhNodesSoA_.bb_max_[nodeIdx] = vec3(-DBL_MAX);
   // Expand bounding box to contain all triangle vertices
-  for (int i = bvhNodesSoA_.firstTriIdx_.at(nodeIdx); i < bvhNodesSoA_.firstTriIdx_.at(nodeIdx)+bvhNodesSoA_.triCount_.at(nodeIdx); i++){
+  for (int i = bvhNodesSoA_.firstTriIdx_[nodeIdx]; i < bvhNodesSoA_.firstTriIdx_[nodeIdx]+bvhNodesSoA_.triCount_[nodeIdx]; i++){
     int i0 = data_->vertexIdx_[i*3];
     int i1 = data_->vertexIdx_[i*3+1];
     int i2 = data_->vertexIdx_[i*3+2];
@@ -366,10 +431,10 @@ void BVH::subdivideSoA(int nodeIdx, int depth){
   // Debug output
   // std::cout << "subdivide() depth: " << depth << ", "
   //           << "nodeIdx: " << nodeIdx << ", "
-  //           << "node.triCount: " << bvhNodesSoA_.triCount_.at(nodeIdx) << std::endl;
+  //           << "node.triCount: " << bvhNodesSoA_.triCount_[nodeIdx] << std::endl;
 
   // Terminate recursion if node has few triangles
-  if (bvhNodesSoA_.triCount_.at(nodeIdx) <= 2) return;
+  if (bvhNodesSoA_.triCount_[nodeIdx] <= 2) return;
 
   // Determine split axis (cycle through x, y, z based on depth)
   int axis = depth % 3;
@@ -380,19 +445,19 @@ void BVH::subdivideSoA(int nodeIdx, int depth){
   inplace_partitionSoA(nodeIdx, splitPos, axis, i);
 
   // Abort split if one side is empty
-  int leftCount = i - bvhNodesSoA_.firstTriIdx_.at(nodeIdx);
-  if (leftCount == 0 || leftCount == bvhNodesSoA_.triCount_.at(nodeIdx)) return;
+  int leftCount = i - bvhNodesSoA_.firstTriIdx_[nodeIdx];
+  if (leftCount == 0 || leftCount == bvhNodesSoA_.triCount_[nodeIdx]) return;
 
   // Create child nodes
   int leftChildIdx = nodesUsed_;
   int rightChildIdx = leftChildIdx + 1;
   nodesUsed_ = nodesUsed_ + 2;
-  bvhNodesSoA_.firstTriIdx_[leftChildIdx] = bvhNodesSoA_.firstTriIdx_.at(nodeIdx);
+  bvhNodesSoA_.firstTriIdx_[leftChildIdx] = bvhNodesSoA_.firstTriIdx_[nodeIdx];
   bvhNodesSoA_.triCount_[leftChildIdx] = leftCount;
   bvhNodesSoA_.firstTriIdx_[rightChildIdx] = i;
-  bvhNodesSoA_.triCount_[rightChildIdx] = bvhNodesSoA_.triCount_.at(nodeIdx) - leftCount;
+  bvhNodesSoA_.triCount_[rightChildIdx] = bvhNodesSoA_.triCount_[nodeIdx] - leftCount;
   bvhNodesSoA_.leftChildIdx_[nodeIdx] = leftChildIdx;
-  bvhNodesSoA_.triCount_.at(nodeIdx) = 0;
+  bvhNodesSoA_.triCount_[nodeIdx] = 0;
   updateNodeBoundsSoA(leftChildIdx);
   updateNodeBoundsSoA(rightChildIdx);
 
@@ -402,7 +467,7 @@ void BVH::subdivideSoA(int nodeIdx, int depth){
 }
 
 void BVH::inplace_partitionSoA(int nodeIdx, double splitPos, int axis, int& i){
-  int j = i + bvhNodesSoA_.triCount_.at(nodeIdx)-1;
+  int j = i + bvhNodesSoA_.triCount_[nodeIdx]-1;
 
   // Partition using two-pointer approach
   while (i <= j){
@@ -436,7 +501,7 @@ void BVH::inplace_partitionSoA(int nodeIdx, double splitPos, int axis, int& i){
 // =============================================================================
 
 double BVH::median(int axis, int nodeIdx) {
-  BVHNode& node = bvhNodes_.at(nodeIdx);
+  BVHNode& node = bvhNodes_[nodeIdx];
   if (node.triCount_ <= 0) throw std::runtime_error("median: empty range");
   if (axis < 0 || axis > 2) throw std::out_of_range("axis must be 0..2");
 
@@ -449,13 +514,13 @@ double BVH::median(int axis, int nodeIdx) {
 }
 
 double BVH::medianSoA(int axis, int nodeIdx) {
-  if (bvhNodesSoA_.triCount_.at(nodeIdx) <= 0) throw std::runtime_error("median: empty range");
+  if (bvhNodesSoA_.triCount_[nodeIdx] <= 0) throw std::runtime_error("median: empty range");
   if (axis < 0 || axis > 2) throw std::out_of_range("axis must be 0..2");
 
   // Collect centroid coordinates along split axis
-  std::vector<double> axis_pts(bvhNodesSoA_.triCount_.at(nodeIdx));
-  for (int i = 0; i < bvhNodesSoA_.triCount_.at(nodeIdx); i++){
-    int idx = (bvhNodesSoA_.firstTriIdx_.at(nodeIdx) + i) * 3;
+  std::vector<double> axis_pts(bvhNodesSoA_.triCount_[nodeIdx]);
+  for (int i = 0; i < bvhNodesSoA_.triCount_[nodeIdx]; i++){
+    int idx = (bvhNodesSoA_.firstTriIdx_[nodeIdx] + i) * 3;
     int i0 = data_->vertexIdx_[idx];
     int i1 = data_->vertexIdx_[idx+1];
     int i2 = data_->vertexIdx_[idx+2];
