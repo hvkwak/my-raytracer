@@ -56,10 +56,9 @@ public:
    * @param ray The ray to test
    * @param bb_min_ Minimum corner of AABB
    * @param bb_max_ Maximum corner of AABB
-   * @param max_distance Maximum distance for culling (default DBL_MAX)
    * @return true if ray intersects the AABB and intersection is closer than max_distance
    */
-  bool intersectAABB(const Ray & ray, const vec3 & bb_min_, const vec3 & bb_max_, double max_distance = DBL_MAX) const;
+  bool intersectAABB(const Ray & ray, const vec3 & bb_min_, const vec3 & bb_max_, double & tmin_) const;
 
   /**
    * @brief Traverse BVH and find closest ray-triangle intersection (AoS version)
@@ -181,14 +180,14 @@ private:
   Data* data_;                         ///< SoA data structure pointer
 
   // BVHNode attributes in SoA
-  struct BVHNodes_SoA {
-    std::vector<vec3> bb_min_;
-    std::vector<vec3> bb_max_;
-    std::vector<int> leftChildIdx_;
-    std::vector<int> firstTriIdx_;
-    std::vector<int> triCount_;
-  };
-  BVHNodes_SoA bvhNodesSoA_;
+  // struct BVHNodes_SoA {
+  //   std::vector<vec3> bb_min_;
+  //   std::vector<vec3> bb_max_;
+  //   std::vector<int> leftChildIdx_;
+  //   std::vector<int> firstTriIdx_;
+  //   std::vector<int> triCount_;
+  // };
+  // BVHNodes_SoA bvhNodesSoA_;
 };
 
 // ===== Utility Functions =====================================================
