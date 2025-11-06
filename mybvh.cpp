@@ -19,6 +19,7 @@ BVH::~BVH(){}
 
 void BVH::init(std::vector<Mesh*> &meshes) {
 
+  std::cout << "Build BVH...";
   if (meshes.size() > 0){
     // Extract triangle data from meshes
     getData(meshes);
@@ -48,6 +49,7 @@ void BVH::init(std::vector<Mesh*> &meshes) {
     //             << " firstTriIdx: " << node.firstTriIdx_
     //             << " triCount: " << node.triCount_ << std::endl;
     // }
+    std::cout << " done. \n" << std::flush;
   } else {
     std::cout << "No mesh available. BVH build stopped." << std::endl;
   }
@@ -55,6 +57,7 @@ void BVH::init(std::vector<Mesh*> &meshes) {
 
 void BVH::initSoA(std::vector<Mesh*> &meshes, Data* data)
 {
+  std::cout << "Build BVH...";
   if (meshes.size() > 0){
     data_ = data;
     triCount = data_->vertexIdx_.size() / 3;
@@ -91,6 +94,7 @@ void BVH::initSoA(std::vector<Mesh*> &meshes, Data* data)
     //             << " firstTriIdx: " << bvhNodesSoA_.firstTriIdx_.at(i)
     //             << " triCount: " << bvhNodesSoA_.triCount_.at(i) << std::endl;
     // }
+    std::cout << " done. \n" << std::flush;
   } else {
     std::cout << "No mesh available. BVH build stopped." << std::endl;
   }

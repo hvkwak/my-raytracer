@@ -9,3 +9,9 @@ target_sources(raytracer PRIVATE ${SOL_SRCS} ${SOL_HDRS} ${CUDA_SRCS})
 target_include_directories(raytracer PRIVATE
     ${CMAKE_SOURCE_DIR}/src
 )
+
+# Add CUDA include directories if CUDA is available
+if (CUDAToolkit_FOUND)
+    target_include_directories(raytracer PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
+    target_link_libraries(raytracer CUDA::cudart)
+endif()

@@ -13,6 +13,35 @@
 #include <sstream>
 #include <string>
 #include <map>
+#include "common/common.h"
+#include <cuda_runtime.h>
+
+
+void Raytracer::init_cpu(const std::string &filename){
+  read_scene(filename);
+  bvh.init(meshes_);
+}
+void Raytracer::init_cuda(const std::string &filename){
+  pre_read_scene(filename);
+  read_scene(filename);
+  buildSoA();
+  bvh.initSoA(meshes_, &data_);
+  cudaInit();
+}
+
+void Raytracer::compute_image_cuda(){
+
+  // allocate memory by resizing image
+  image_.resize(camera_.width_, camera_.height_);
+  Image tmpimage;
+  tmpimage.resize(camera_.width_, camera_.height_);
+
+  Image *d_image, *d_tmpimage;
+  CHECK(cudaMalloc((Image**)&d_image, sizeof(Image)));
+  CHECK(cudaMalloc((Image**)&d_tmpimage, sizeof(Image)));
+
+
+}
 
 /**
  * @brief Build Structure-of-Arrays (SoA) data layout from mesh objects
