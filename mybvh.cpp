@@ -63,8 +63,8 @@ void BVH::initSoA(std::vector<Mesh*> &meshes, Data* data)
     triCount = data_->vertexIdx_.size() / 3;
 
     // Allocate node pool in SoA, initialize with invalid values
-    // bvhNodesSoA_.bb_min_.resize(2*triCount-1, vec3(-DBL_MAX));
-    // bvhNodesSoA_.bb_max_.resize(2*triCount-1, vec3(DBL_MAX));
+    // bvhNodesSoA_.bb_min_.resize(2*triCount-1, vec4(-DBL_MAX));
+    // bvhNodesSoA_.bb_max_.resize(2*triCount-1, vec4(DBL_MAX));
     // bvhNodesSoA_.triCount_.resize(2*triCount-1, -1);
     // bvhNodesSoA_.leftChildIdx_.resize(2*triCount-1, -1);
     // bvhNodesSoA_.firstTriIdx_.resize(2*triCount-1, -1);
@@ -104,7 +104,7 @@ bool BVH::isInitialized() const{
   return isInitialized_;
 }
 
-bool BVH::intersectAABB(const Ray & ray, const vec3 & bb_min_, const vec3 & bb_max_, double & tmin_) const{
+bool BVH::intersectAABB(const Ray & ray, const vec4 & bb_min_, const vec4 & bb_max_, double & tmin_) const{
   // Slab method for ray-AABB intersection
   double tmin = (bb_min_[0] - ray.origin_[0]) / ray.direction_[0];
   double tmax = (bb_max_[0] - ray.origin_[0]) / ray.direction_[0];
@@ -145,8 +145,8 @@ bool BVH::intersectAABB(const Ray & ray, const vec3 & bb_min_, const vec3 & bb_m
 
 bool BVH::intersectBVH(const Ray& ray,
                        Material& intersection_material,
-                       vec3 &intersection_point,
-                       vec3 &intersection_normal,
+                       vec4 &intersection_point,
+                       vec4 &intersection_normal,
                        double &intersection_distance,
                        int nodeIdx) const{
   const BVHNode & node = bvhNodes_[nodeIdx];
@@ -160,7 +160,7 @@ bool BVH::intersectBVH(const Ray& ray,
   if (node.triCount_ > 0) {
     // Leaf node - test all triangles
     double t;
-    vec3 p, n, d;
+    vec4 p, n, d;
     for (int i = node.firstTriIdx_; i < node.firstTriIdx_ + node.triCount_; i++){
       Triangle* tri = triangles_.at(i);
       Mesh* mesh = meshes_.at(tri->meshIdx);
@@ -210,8 +210,8 @@ bool BVH::intersectBVH(const Ray& ray,
 
 bool BVH::intersectBVHSoA(const Ray &ray,
                           Material& intersection_material,
-                          vec3 &intersection_point,
-                          vec3 &intersection_normal,
+                          vec4 &intersection_point,
+                          vec4 &intersection_normal,
                           double &intersection_distance) const {
 
   int stack[64];
@@ -226,8 +226,8 @@ bool BVH::intersectBVHSoA(const Ray &ray,
     int nodeIdx = stack[--stackPtr];
 
     // Cache node data once
-    // vec3 bb_min = bvhNodesSoA_.bb_min_[nodeIdx];
-    // vec3 bb_max = bvhNodesSoA_.bb_max_[nodeIdx];
+    // vec4 bb_min = bvhNodesSoA_.bb_min_[nodeIdx];
+    // vec4 bb_max = bvhNodesSoA_.bb_max_[nodeIdx];
     // int triCount = bvhNodesSoA_.triCount_[nodeIdx];
     // int firstTriIdx = bvhNodesSoA_.firstTriIdx_[nodeIdx];
     // int leftChildIdx = bvhNodesSoA_.leftChildIdx_[nodeIdx];
@@ -243,7 +243,7 @@ bool BVH::intersectBVHSoA(const Ray &ray,
     if (node.triCount_ > 0) {
       // Leaf node - test all triangles (SoA data layout)
       double t;
-      vec3 p, n, d;
+      vec4 p, n, d;
       for (int i = node.firstTriIdx_; i < node.firstTriIdx_ + node.triCount_; i++) {
         // Fetch vertex indices
         int vi0 = data_->vertexIdx_[i * 3];
@@ -251,13 +251,13 @@ bool BVH::intersectBVHSoA(const Ray &ray,
         int vi2 = data_->vertexIdx_[i * 3 + 2];
 
         // Fetch vertex positions and normals
-        vec3 vp0 = data_->vertexPos_[vi0];
-        vec3 vp1 = data_->vertexPos_[vi1];
-        vec3 vp2 = data_->vertexPos_[vi2];
-        vec3 normal = data_->normals_[i];
-        vec3 vn0 = data_->vertexNormals_[vi0];
-        vec3 vn1 = data_->vertexNormals_[vi1];
-        vec3 vn2 = data_->vertexNormals_[vi2];
+        vec4 vp0 = data_->vertexPos_[vi0];
+        vec4 vp1 = data_->vertexPos_[vi1];
+        vec4 vp2 = data_->vertexPos_[vi2];
+        vec4 normal = data_->normals_[i];
+        vec4 vn0 = data_->vertexNormals_[vi0];
+        vec4 vn1 = data_->vertexNormals_[vi1];
+        vec4 vn2 = data_->vertexNormals_[vi2];
 
         Mesh *mesh = data_->meshes_[vi0];
 
@@ -294,13 +294,13 @@ bool BVH::intersectBVHSoA(const Ray &ray,
       double tminLeft, tminRight;
 
       // Cache node data once
-      // vec3 bb_min_left = bvhNodesSoA_.bb_min_[leftChildIdx];
-      // vec3 bb_max_left = bvhNodesSoA_.bb_max_[leftChildIdx];
+      // vec4 bb_min_left = bvhNodesSoA_.bb_min_[leftChildIdx];
+      // vec4 bb_max_left = bvhNodesSoA_.bb_max_[leftChildIdx];
       // bool hitLeft = intersectAABB(ray, bb_min_left, bb_max_left, tminLeft);
       bool hitLeft = intersectAABB(ray, bvhNodes_[node.leftChildIdx_].bb_min_, bvhNodes_[node.leftChildIdx_].bb_max_, tminLeft);
 
-      // vec3 bb_min_right = bvhNodesSoA_.bb_min_[leftChildIdx+1];
-      // vec3 bb_max_right = bvhNodesSoA_.bb_max_[leftChildIdx+1];
+      // vec4 bb_min_right = bvhNodesSoA_.bb_min_[leftChildIdx+1];
+      // vec4 bb_max_right = bvhNodesSoA_.bb_max_[leftChildIdx+1];
       // bool hitRight = intersectAABB(ray, bb_min_right, bb_max_right, tminRight);
       bool hitRight = intersectAABB(ray, bvhNodes_[node.leftChildIdx_+1].bb_min_, bvhNodes_[node.leftChildIdx_+1].bb_max_, tminRight);
 
@@ -335,10 +335,10 @@ void BVH::getData(std::vector<Mesh*> &meshes){
   for (Mesh* mesh : meshes_){
     for (Triangle &tri : mesh->triangles_) {
       // Compute triangle centroid for splitting
-      vec3 vertex0 = mesh->vertices_.at(tri.i0).position;
-      vec3 vertex1 = mesh->vertices_.at(tri.i1).position;
-      vec3 vertex2 = mesh->vertices_.at(tri.i2).position;
-      vec3 centroid = (vertex0 + vertex1 + vertex2) / 3.0;
+      vec4 vertex0 = mesh->vertices_.at(tri.i0).position;
+      vec4 vertex1 = mesh->vertices_.at(tri.i1).position;
+      vec4 vertex2 = mesh->vertices_.at(tri.i2).position;
+      vec4 centroid = (vertex0 + vertex1 + vertex2) / 3.0;
       tri.centroid = centroid;
       tri.meshIdx = i;
       triangles_.push_back(&tri);
@@ -350,8 +350,8 @@ void BVH::getData(std::vector<Mesh*> &meshes){
 
 void BVH::updateNodeBounds(int nodeIdx){
   BVHNode& node = bvhNodes_[nodeIdx];
-  node.bb_min_ = vec3(DBL_MAX);
-  node.bb_max_ = vec3(-DBL_MAX);
+  node.bb_min_ = vec4(DBL_MAX);
+  node.bb_max_ = vec4(-DBL_MAX);
 
   // Expand bounding box to contain all triangle vertices
   for (int i = node.firstTriIdx_; i < node.firstTriIdx_ + node.triCount_; i++){
@@ -423,17 +423,17 @@ void BVH::inplace_partition(int nodeIdx, double splitPos, int axis, int & i){
 
 void BVH::updateNodeBoundsSoA(int nodeIdx){
   BVHNode & node = bvhNodes_[nodeIdx];
-  node.bb_min_ = vec3(DBL_MAX);
-  node.bb_max_ = vec3(-DBL_MAX);
+  node.bb_min_ = vec4(DBL_MAX);
+  node.bb_max_ = vec4(-DBL_MAX);
   // Expand bounding box to contain all triangle vertices
   //for (int i = bvhNodesSoA_.firstTriIdx_[nodeIdx]; i < bvhNodesSoA_.firstTriIdx_[nodeIdx]+bvhNodesSoA_.triCount_[nodeIdx]; i++){
   for (int i = node.firstTriIdx_; i < node.firstTriIdx_+node.triCount_; i++){
     int i0 = data_->vertexIdx_[i*3];
     int i1 = data_->vertexIdx_[i*3+1];
     int i2 = data_->vertexIdx_[i*3+2];
-    vec3 v0 = data_->vertexPos_[i0];
-    vec3 v1 = data_->vertexPos_[i1];
-    vec3 v2 = data_->vertexPos_[i2];
+    vec4 v0 = data_->vertexPos_[i0];
+    vec4 v1 = data_->vertexPos_[i1];
+    vec4 v2 = data_->vertexPos_[i2];
     // bvhNodesSoA_.bb_min_[nodeIdx] = fmin(bvhNodesSoA_.bb_min_[nodeIdx], v0);
     // bvhNodesSoA_.bb_min_[nodeIdx] = fmin(bvhNodesSoA_.bb_min_[nodeIdx], v1);
     // bvhNodesSoA_.bb_min_[nodeIdx] = fmin(bvhNodesSoA_.bb_min_[nodeIdx], v2);
@@ -500,10 +500,10 @@ void BVH::inplace_partitionSoA(int nodeIdx, double splitPos, int axis, int& i){
     int vi0 = data_->vertexIdx_[i*3];
     int vi1 = data_->vertexIdx_[i*3+1];
     int vi2 = data_->vertexIdx_[i*3+2];
-    vec3 vp0 = data_->vertexPos_[vi0];
-    vec3 vp1 = data_->vertexPos_[vi1];
-    vec3 vp2 = data_->vertexPos_[vi2];
-    vec3 centroid = (vp0 + vp1 + vp2) / 3.0;
+    vec4 vp0 = data_->vertexPos_[vi0];
+    vec4 vp1 = data_->vertexPos_[vi1];
+    vec4 vp2 = data_->vertexPos_[vi2];
+    vec4 centroid = (vp0 + vp1 + vp2) / 3.0;
 
     if (centroid[axis] < splitPos){
       i++;
@@ -550,10 +550,10 @@ double BVH::medianSoA(int axis, int nodeIdx) {
     int i0 = data_->vertexIdx_[idx];
     int i1 = data_->vertexIdx_[idx+1];
     int i2 = data_->vertexIdx_[idx+2];
-    vec3 v0 = data_->vertexPos_[i0];
-    vec3 v1 = data_->vertexPos_[i1];
-    vec3 v2 = data_->vertexPos_[i2];
-    vec3 centroid = (v0 + v1 + v2) / 3.0;
+    vec4 v0 = data_->vertexPos_[i0];
+    vec4 v1 = data_->vertexPos_[i1];
+    vec4 v2 = data_->vertexPos_[i2];
+    vec4 centroid = (v0 + v1 + v2) / 3.0;
     axis_pts[i] = centroid[axis];
   }
   return median_inplace(axis_pts);

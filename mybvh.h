@@ -9,7 +9,7 @@
 #ifndef MYBVH_H
 #define MYBVH_H
 
-#include "utils/vec3.h"
+#include "utils/vec4.h"
 #include "utils/Ray.h"
 #include "utils/Material.h"
 #include "utils/Triangle.h"
@@ -58,7 +58,7 @@ public:
    * @param bb_max_ Maximum corner of AABB
    * @return true if ray intersects the AABB and intersection is closer than max_distance
    */
-  bool intersectAABB(const Ray & ray, const vec3 & bb_min_, const vec3 & bb_max_, double & tmin_) const;
+  bool intersectAABB(const Ray & ray, const vec4 & bb_min_, const vec4 & bb_max_, double & tmin_) const;
 
   /**
    * @brief Traverse BVH and find closest ray-triangle intersection (AoS version)
@@ -72,8 +72,8 @@ public:
    */
   bool intersectBVH(const Ray &ray,
                     Material& intersection_material,
-                    vec3 &intersection_point,
-                    vec3 &intersection_normal,
+                    vec4 &intersection_point,
+                    vec4 &intersection_normal,
                     double &intersection_distance,
                     int nodeIdx) const;
 
@@ -89,8 +89,8 @@ public:
    */
   bool intersectBVHSoA(const Ray &ray,
                         Material& intersection_material,
-                        vec3 &intersection_point,
-                        vec3 &intersection_normal,
+                        vec4 &intersection_point,
+                        vec4 &intersection_normal,
                         double &intersection_distance) const;
 
 private:
@@ -102,7 +102,7 @@ private:
    * Leaf nodes have triCount > 0 and store firstTriIdx to triangle data
    */
   struct BVHNode {
-    vec3 bb_min_, bb_max_;  ///< Axis-aligned bounding box
+    vec4 bb_min_, bb_max_;  ///< Axis-aligned bounding box
     int leftChildIdx_;       ///< Left child index (right child is leftChildIdx + 1)
     int firstTriIdx_;        ///< First triangle index (for leaf nodes)
     int triCount_;           ///< Number of triangles (0 for internal nodes)
@@ -181,8 +181,8 @@ private:
 
   // BVHNode attributes in SoA
   // struct BVHNodes_SoA {
-  //   std::vector<vec3> bb_min_;
-  //   std::vector<vec3> bb_max_;
+  //   std::vector<vec4> bb_min_;
+  //   std::vector<vec4> bb_max_;
   //   std::vector<int> leftChildIdx_;
   //   std::vector<int> firstTriIdx_;
   //   std::vector<int> triCount_;
@@ -193,17 +193,17 @@ private:
 // ===== Utility Functions =====================================================
 
 /**
- * @brief Component-wise minimum of two vec3
+ * @brief Component-wise minimum of two vec4
  */
-inline vec3 fmin(const vec3 &a, const vec3 &b) {
-  return vec3(fmin(a[0], b[0]), fmin(a[1], b[1]), fmin(a[2], b[2]));
+inline vec4 fmin(const vec4 &a, const vec4 &b) {
+  return vec4(fmin(a[0], b[0]), fmin(a[1], b[1]), fmin(a[2], b[2]));
 }
 
 /**
- * @brief Component-wise maximum of two vec3
+ * @brief Component-wise maximum of two vec4
  */
-inline vec3 fmax(const vec3 &a, const vec3 &b) {
-  return vec3(fmax(a[0], b[0]), fmax(a[1], b[1]), fmax(a[2], b[2]));
+inline vec4 fmax(const vec4 &a, const vec4 &b) {
+  return vec4(fmax(a[0], b[0]), fmax(a[1], b[1]), fmax(a[2], b[2]));
 }
 
 #endif // MYBVH_H

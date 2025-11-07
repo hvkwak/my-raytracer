@@ -7,7 +7,8 @@
 // ============================================================================
 
 #include "Raytracer.h"
-#include "utils/vec3.h"
+#include "utils/vec4.h"
+#include "utils/vec4.h"
 #include "utils/Material.h"
 #include <fstream>
 #include <sstream>
@@ -36,11 +37,18 @@ void Raytracer::compute_image_cuda(){
   Image tmpimage;
   tmpimage.resize(camera_.width_, camera_.height_);
 
-  Image *d_image, *d_tmpimage;
-  CHECK(cudaMalloc((Image**)&d_image, sizeof(Image)));
-  CHECK(cudaMalloc((Image**)&d_tmpimage, sizeof(Image)));
+  // malloc device memory for image pixels
+  int nPixels = camera_.width_*camera_.height_;
+  size_t nBytesPixels = nPixels*sizeof(vec4);
+  vec4 *dPixels;
+  CHECK(cudaMalloc(&dPixels, nBytesPixels));
 
+  // invoke kernel at host side
+  int nThreads = 32;
+  dim3 block (nThreads, nThreads);
+  dim3 grid ((nPixels+block.x-1)/block.x, (nPixels+block.y-1)/block.y);
 
+  traceOnGPU<<<grid, block>>>();
 }
 
 /**
@@ -259,8 +267,8 @@ void Raytracer::pre_read_obj(const char* _filename)
  * @param normal normal at the point
  * @param light light source
  */
-double Raytracer::diffuse(const vec3 &point, const vec3 &normal, const Light &light) const {
-  vec3 ray_from_point_to_light = normalize(light.position - point);
+double Raytracer::diffuse(const vec4 &point, const vec4 &normal, const Light &light) const {
+  vec4 ray_from_point_to_light = normalize(light.position - point);
   double cosTheta = dot(normal, ray_from_point_to_light);
   cosTheta = std::max(0.0, cosTheta);
   return cosTheta;
@@ -273,10 +281,10 @@ double Raytracer::diffuse(const vec3 &point, const vec3 &normal, const Light &li
  * @param normal normal at the point
  * @param view normalized direction from the 'point' to the viewer's position
  */
-double Raytracer::reflection(const vec3 &point, const vec3 &normal, const vec3 &view, const Light &light) const {
+double Raytracer::reflection(const vec4 &point, const vec4 &normal, const vec4 &view, const Light &light) const {
   if (diffuse(point, normal, light) > 0.0){
-    vec3 ray_from_point_to_light = normalize(light.position - point);
-    vec3 ray_reflected = normalize(mirror(ray_from_point_to_light, normal));
+    vec4 ray_from_point_to_light = normalize(light.position - point);
+    vec4 ray_reflected = normalize(mirror(ray_from_point_to_light, normal));
     double cosTheta = dot(ray_reflected, view);
     cosTheta = std::max(0.0, cosTheta);
     return cosTheta;
@@ -295,10 +303,10 @@ double Raytracer::reflection(const vec3 &point, const vec3 &normal, const vec3 &
  * @param depth Current recursion depth
  * @return Reflected color contribution
  */
-vec3 Raytracer::subtrace(const Ray &ray, const Material &material, const vec3 &point, const vec3 &normal, const int depth){
+vec4 Raytracer::subtrace(const Ray &ray, const Material &material, const vec4 &point, const vec4 &normal, const int depth){
   if (material.mirror > 0.0){
     // Generate reflected ray
-    vec3 v = reflect(ray.direction_, normal);
+    vec4 v = reflect(ray.direction_, normal);
     const double epsilon = 1e-4;  // Offset to avoid self-intersection
     Ray reflected_ray = Ray(point + epsilon * v, v);
     return material.mirror * trace(reflected_ray, depth + 1);
@@ -317,10 +325,10 @@ vec3 Raytracer::subtrace(const Ray &ray, const Material &material, const vec3 &p
  * @param material Material properties
  * @return Total color contribution from all light sources
  */
-vec3 Raytracer::lighting(const vec3 &point, const vec3 &normal,
-                         const vec3 &view, const Material &material) const {
+vec4 Raytracer::lighting(const vec4 &point, const vec4 &normal,
+                         const vec4 &view, const Material &material) const {
   const double epsilon = 1e-4;  // Offset to avoid self-intersection
-  vec3 color(0.0, 0.0, 0.0);
+  vec4 color(0.0, 0.0, 0.0);
 
   // Ambient component (approximates global illumination)
   color[0] += ambience_[0] * material.ambient[0];
@@ -344,10 +352,10 @@ vec3 Raytracer::lighting(const vec3 &point, const vec3 &normal,
     bool isShadow = false;
     if (material.shadowable){
       Material shadow_material;
-      vec3 shadow_point;
-      vec3 shadow_normal;
+      vec4 shadow_point;
+      vec4 shadow_normal;
       double shadow_t;
-      vec3 light_direction = normalize(light.position - point);
+      vec4 light_direction = normalize(light.position - point);
       double light_distance = norm(light.position - point);
       Ray shadow_ray = Ray(point + epsilon * light_direction, light_direction);
       bool isIntersect = intersect_scene(shadow_ray, shadow_material,

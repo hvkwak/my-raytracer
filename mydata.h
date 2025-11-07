@@ -9,7 +9,7 @@
 #ifndef MYDATA_H
 #define MYDATA_H
 
-#include "utils/vec3.h"
+#include "utils/vec4.h"
 #include <Mesh.h>
 #include <vector>
 
@@ -27,11 +27,11 @@
 struct Data {
   // ===== Per-vertex data (vbase) =====
   std::vector<Mesh*> meshes_;           ///< Mesh pointer for each vertex
-  std::vector<vec3> vertexPos_;         ///< Vertex positions
-  std::vector<vec3> vertexNormals_;     ///< Vertex normals
+  std::vector<vec4> vertexPos_;         ///< Vertex positions
+  std::vector<vec4> vertexNormals_;     ///< Vertex normals
 
   // ===== Per-triangle data (tbase) =====
-  std::vector<vec3> normals_;           ///< Triangle face normals
+  std::vector<vec4> normals_;           ///< Triangle face normals
 
   // ===== Index data (ibase) =====
   std::vector<int> vertexIdx_;          ///< Vertex indices (3 per triangle)
