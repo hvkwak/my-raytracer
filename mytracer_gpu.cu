@@ -18,15 +18,24 @@
 #include "utils/Object.h"
 #include "utils/Light.h"
 #include "utils/Ray.h"
+#include "mydata.h"
 
-void Raytracer::cudaInit(void){
-    // Initialize CUDA device
-    int dev = 0;
-    cudaDeviceProp deviceProp;
-    CHECK(cudaGetDeviceProperties(&deviceProp, dev));
-    printf("Using Device %d: %s\n", dev, deviceProp.name);
-    CHECK(cudaSetDevice(dev));
+
+
+__global__ void traceOnGPU(vec4* pixels,
+                           int width,
+                           int height,
+                           Camera camera,
+                           Light* lights,
+                           int numLights,
+                           Data data,
+                           vec4 background,
+                           vec4 ambience,
+                           int max_depth){
+
+
 }
+
 
 //=============================================================================
 // Device Helper Functions

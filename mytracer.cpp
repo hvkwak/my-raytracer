@@ -16,7 +16,7 @@
 #include <map>
 #include "common/common.h"
 #include <cuda_runtime.h>
-
+#include "mytracer_gpu.h"
 
 void Raytracer::init_cpu(const std::string &filename){
   read_scene(filename);
@@ -27,10 +27,20 @@ void Raytracer::init_cuda(const std::string &filename){
   read_scene(filename);
   buildSoA();
   bvh.initSoA(meshes_, &data_);
-  cudaInit();
 }
 
+// void Raytracer::cudaInit(void){
+//   // Initialize CUDA device
+//   int dev = 0;
+//   cudaDeviceProp deviceProp;
+//   CHECK(cudaGetDeviceProperties(&deviceProp, dev));
+//   printf("Using Device %d: %s\n", dev, deviceProp.name);
+//   CHECK(cudaSetDevice(dev));
+// }
+
+
 void Raytracer::compute_image_cuda(){
+  std::cout << "Raytracer::compute_image_cuda()..." ;
 
   // allocate memory by resizing image
   image_.resize(camera_.width_, camera_.height_);
@@ -43,12 +53,33 @@ void Raytracer::compute_image_cuda(){
   vec4 *dPixels;
   CHECK(cudaMalloc(&dPixels, nBytesPixels));
 
+  // malloc device memory for lights and copy from host
+  int numLights = lights_.size();
+  Light* dLights;
+  CHECK(cudaMalloc(&dLights, numLights * sizeof(Light)));
+  CHECK(cudaMemcpy(dLights, lights_.data(), numLights * sizeof(Light), cudaMemcpyHostToDevice));
+
   // invoke kernel at host side
   int nThreads = 32;
   dim3 block (nThreads, nThreads);
   dim3 grid ((nPixels+block.x-1)/block.x, (nPixels+block.y-1)/block.y);
 
-  traceOnGPU<<<grid, block>>>();
+  // traceOnGPU<<<grid, block>>>(dPixels, camera_.width_, camera_.height_, camera_, dLights, numLights, data_,
+  //                             getBackground(),
+  //                             getAmbience(),
+  //                             getMaxDepth());
+
+  // // synchronize GPU execution
+  // CHECK(cudaDeviceSynchronize());
+
+  // // copy result from device to host
+  // CHECK(cudaMemcpy(image_.data(), dPixels, nBytesPixels, cudaMemcpyDeviceToHost));
+
+  // // free device memory
+  // CHECK(cudaFree(dPixels));
+  // CHECK(cudaFree(dLights));
+
+  // std::cout << " done." << std::endl;
 }
 
 /**
@@ -57,7 +88,27 @@ void Raytracer::compute_image_cuda(){
  * Transforms mesh data from AoS to SoA format for GPU-friendly memory access
  */
 void Raytracer::buildSoA(){
+
   std::cout << "buildSoA...";
+
+  /// SoA memory allocation
+  data_.meshes_ = (stMesh*)malloc(vertexCount_*sizeof(stMesh));
+  data_.vertexPos_ = (vec4*)malloc(vertexCount_*sizeof(vec4));
+  data_.vertexIdx_ = (int*)malloc(vertexIdxCount_*sizeof(int));
+  data_.textureCoordinatesU_ = (double*)malloc(textCoordCount_*sizeof(double));
+  data_.textureCoordinatesV_ = (double*)malloc(textCoordCount_*sizeof(double));
+  data_.textureIdx_ = (int*)malloc(textIdxCount_*sizeof(int));
+  data_.firstVertex_ = (int*)malloc(meshCount_*sizeof(int));
+  data_.vertexCount_ = (int*)malloc(meshCount_*sizeof(int));
+  data_.firstVertexIdx_ = (int*)malloc(meshCount_*sizeof(int));
+  data_.vertexIdxCount_ = (int*)malloc(meshCount_*sizeof(int));
+  data_.firstTextCoord_ = (int*)malloc(meshCount_*sizeof(int));
+  data_.textCoordCount_ = (int*)malloc(meshCount_*sizeof(int));
+  data_.firstTextIdx_ = (int*)malloc(meshCount_*sizeof(int));
+  data_.textIdxCount_ = (int*)malloc(meshCount_*sizeof(int));
+  data_.normals_ = (vec4*)malloc(vertexIdxCount_/3*sizeof(vec4)); // triangle
+  data_.vertexNormals_ = (vec4*)malloc(vertexCount_*sizeof(vec4));
+
   for (Mesh* mesh : meshes_){
     // Copy vertex data
     int vbase = data_.vertexPos_.size();
@@ -106,31 +157,47 @@ void Raytracer::buildSoA(){
  */
 void Raytracer::pre_read_scene(const std::string &filename)
 {
-  // Data(concat Vectors) clean up
-  data_.meshes_.clear();
-  data_.vertexPos_.clear();
-  data_.vertexIdx_.clear();
-  data_.textureCoordinatesU_.clear();
-  data_.textureCoordinatesV_.clear();
-  data_.textureIdx_.clear();
+  // // Data(concat Vectors) clean up
+  if (data_.meshes_ != nullptr) free(data_.meshes_);
+  if (data_.vertexPos_ != nullptr) free(data_.vertexPos_);
+  if (data_.vertexIdx_ != nullptr) free(data_.vertexIdx_);
+  if (data_.textureCoordinatesU_ != nullptr) free(data_.textureCoordinatesU_);
+  if (data_.textureCoordinatesV_ != nullptr) free(data_.textureCoordinatesV_);
+  if (data_.textureIdx_ != nullptr) free(data_.textureIdx_);
+  if (data_.firstVertex_ != nullptr) free(data_.firstVertex_);
+  if (data_.vertexCount_ != nullptr) free(data_.vertexCount_);
+  if (data_.firstVertexIdx_ != nullptr) free(data_.firstVertexIdx_);
+  if (data_.vertexIdxCount_ != nullptr) free(data_.vertexIdxCount_);
+  if (data_.firstTextCoord_ != nullptr) free(data_.firstTextCoord_);
+  if (data_.textCoordCount_ != nullptr) free(data_.textCoordCount_);
+  if (data_.firstTextIdx_ != nullptr) free(data_.firstTextIdx_);
+  if (data_.textIdxCount_ != nullptr) free(data_.textIdxCount_);
+  if (data_.normals_ != nullptr) free(data_.normals_);
+  if (data_.vertexNormals_ != nullptr) free(data_.vertexNormals_);
 
-  data_.firstVertex_.clear();
-  data_.vertexCount_.clear();
-  data_.firstVertexIdx_.clear();
-  data_.vertexIdxCount_.clear();
-  data_.firstTextCoord_.clear();
-  data_.textCoordCount_.clear();
-  data_.firstTextIdx_.clear();
-  data_.textIdxCount_.clear();
+  // data_.meshes_.clear();
+  // data_.vertexPos_.clear();
+  // data_.vertexIdx_.clear();
+  // data_.textureCoordinatesU_.clear();
+  // data_.textureCoordinatesV_.clear();
+  // data_.textureIdx_.clear();
+  // data_.firstVertex_.clear();
+  // data_.vertexCount_.clear();
+  // data_.firstVertexIdx_.clear();
+  // data_.vertexIdxCount_.clear();
+  // data_.firstTextCoord_.clear();
+  // data_.textCoordCount_.clear();
+  // data_.firstTextIdx_.clear();
+  // data_.textIdxCount_.clear();
+  // data_.normals_.clear();
+  // data_.vertexNormals_.clear();
 
-  data_.normals_.clear();
-  data_.vertexNormals_.clear();
+  data_.tMeshCount = 0;
+  data_.tVertexCount_ = 0;
+  data_.tVertexIdxCount_ = 0;
+  data_.tTextCoordCount_ = 0;
+  data_.tTextIdxCount_ = 0;
 
-  meshCount_ = 0;
-  vertexCount_ = 0;
-  vertexIdxCount_ = 0;
-  textCoordCount_ = 0;
-  textIdxCount_ = 0;
   std::ifstream ifs(filename);
   if (!ifs) {
     std::cerr << "Cannot open file " << filename << std::endl;
@@ -160,23 +227,26 @@ void Raytracer::pre_read_scene(const std::string &filename)
   }
   ifs.close();
 
-  /// SoA memory allocation
-  data_.meshes_.reserve(vertexCount_);
-  data_.vertexPos_.reserve(vertexCount_);
-  data_.vertexIdx_.reserve(vertexIdxCount_);
-  data_.textureCoordinatesU_.reserve(textCoordCount_);
-  data_.textureCoordinatesV_.reserve(textCoordCount_);
-  data_.textureIdx_.reserve(textIdxCount_);
-  data_.firstVertex_.reserve(meshCount_);
-  data_.vertexCount_.reserve(meshCount_);
-  data_.firstVertexIdx_.reserve(meshCount_);
-  data_.vertexIdxCount_.reserve(meshCount_);
-  data_.firstTextCoord_.reserve(meshCount_);
-  data_.textCoordCount_.reserve(meshCount_);
-  data_.firstTextIdx_.reserve(meshCount_);
-  data_.textIdxCount_.reserve(meshCount_);
-  data_.normals_.reserve(vertexIdxCount_/3);
-  data_.vertexNormals_.reserve(vertexCount_);
+  /// total mesh count
+  data_.tMeshCount = meshCount_;
+}
+
+Raytracer::~Raytracer(){
+  free(data_.vertexPos_);
+  free(data_.vertexIdx_);
+  free(data_.textureCoordinatesU_);
+  free(data_.textureCoordinatesV_);
+  free(data_.textureIdx_);
+  free(data_.firstVertex_);
+  free(data_.vertexCount_);
+  free(data_.firstVertexIdx_);
+  free(data_.vertexIdxCount_);
+  free(data_.firstTextCoord_);
+  free(data_.textCoordCount_);
+  free(data_.firstTextIdx_);
+  free(data_.textIdxCount_);
+  free(data_.normals_);
+  free(data_.vertexNormals_);
 }
 
 /**
@@ -247,16 +317,16 @@ void Raytracer::pre_read_obj(const char* _filename)
       continue;
     }
   }
-  vertexCount_ = vertexCount_ + vertexCount;
-  vertexIdxCount_ = vertexIdxCount_ + vertexIdxCount;
-  textCoordCount_ = textCoordCount_ + textCoordCount;
-  textIdxCount_ = textIdxCount_ + textIdxCount;
+  data_.tVertexCount_ = data_.tVertexCount_ + vertexCount;
+  data_.tVertexIdxCount_ = data_.tVertexIdxCount_ + vertexIdxCount;
+  data_.tTextCoordCount_ = data_.tTextCoordCount_ + textCoordCount;
+  data_.tTextIdxCount_ = data_.tTextIdxCount_ + textIdxCount;
 
   std::cout << "\n  pre-read " << _filename << ": "
-            << vertexCount << " vertices, "
-            << vertexIdxCount/3 << " triangles, "
-            << textCoordCount << " textCoordCount, "
-            << textIdxCount << " textIdxCount"
+            << data_.tVertexCount << " vertices, "
+            << data_.tVertexIdxCount/3 << " triangles, "
+            << data_.tTextCoordCount << " textCoordCount, "
+            << data_.tTextIdxCount << " textIdxCount"
             << std::flush;
 }
 
