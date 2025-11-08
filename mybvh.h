@@ -1,5 +1,5 @@
 // ============================================================================
-// Computer Graphics - TU Dortmund
+// Computer Graphics(Graphische Datenverarbeitung) - TU Dortmund
 // Implementation by Hyovin Kwak (Instructor: Prof. Dr. Mario Botsch)
 //
 // This file contains my solutions to the course exercises.
@@ -77,21 +77,31 @@ public:
                     double &intersection_distance,
                     int nodeIdx) const;
 
-  /**
-   * @brief Traverse BVH and find closest ray-triangle intersection (SoA version)
-   * @param ray The ray to test
-   * @param intersection_material Material at intersection point (output)
-   * @param intersection_point Intersection point (output)
-   * @param intersection_normal Normal at intersection (output)
-   * @param intersection_distance Distance to intersection (input/output)
-   * @param nodeIdx Current BVH node index
-   * @return true if intersection found closer than intersection_distance
-   */
-  bool intersectBVHSoA(const Ray &ray,
-                        Material& intersection_material,
-                        vec4 &intersection_point,
-                        vec4 &intersection_normal,
-                        double &intersection_distance) const;
+  // /**
+  //  * @brief Traverse BVH and find closest ray-triangle intersection (SoA version)
+  //  * @param ray The ray to test
+  //  * @param intersection_material Material at intersection point (output)
+  //  * @param intersection_point Intersection point (output)
+  //  * @param intersection_normal Normal at intersection (output)
+  //  * @param intersection_distance Distance to intersection (input/output)
+  //  * @param nodeIdx Current BVH node index
+  //  * @return true if intersection found closer than intersection_distance
+  //  */
+  // bool intersectBVHSoA(const Ray &ray,
+  //                       Material& intersection_material,
+  //                       vec4 &intersection_point,
+  //                       vec4 &intersection_normal,
+  //                       double &intersection_distance) const;
+
+  // BVHNode attributes in SoA
+  struct BVHNodes_SoA {
+    vec4* bb_min_ = nullptr;
+    vec4* bb_max_ = nullptr;
+    int* leftChildIdx_ = nullptr;
+    int* firstTriIdx_ = nullptr;
+    int* triCount_ = nullptr;
+  };
+  BVHNodes_SoA bvhNodesSoA_;
 
 private:
 
@@ -178,16 +188,6 @@ private:
   bool isInitialized_ = false;         ///< Initialization flag
 
   Data* data_;                         ///< SoA data structure pointer
-
-  // BVHNode attributes in SoA
-  // struct BVHNodes_SoA {
-  //   std::vector<vec4> bb_min_;
-  //   std::vector<vec4> bb_max_;
-  //   std::vector<int> leftChildIdx_;
-  //   std::vector<int> firstTriIdx_;
-  //   std::vector<int> triCount_;
-  // };
-  // BVHNodes_SoA bvhNodesSoA_;
 };
 
 // ===== Utility Functions =====================================================

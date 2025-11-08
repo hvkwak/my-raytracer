@@ -1,5 +1,5 @@
 // ============================================================================
-// Computer Graphics - TU Dortmund
+// Computer Graphics(Graphische Datenverarbeitung) - TU Dortmund
 // Implementation by Hyovin Kwak (Instructor: Prof. Dr. Mario Botsch)
 //
 // This file contains my solutions to the course exercises.
@@ -11,11 +11,20 @@
 #include <cfloat>
 #include <math.h>
 #include <vector>
-
+#include "common/common.h"
+#include <cuda_runtime.h>
 // =============================================================================
 // Public Methods
 // =============================================================================
-BVH::~BVH(){}
+
+BVH::~BVH(){
+  auto F = [&](auto*& p){ if (p) { cudaFree(p); p = nullptr; } };
+  F(bvhNodesSoA_.bb_min_);
+  F(bvhNodesSoA_.bb_max_);
+  F(bvhNodesSoA_.triCount_);
+  F(bvhNodesSoA_.leftChildIdx_);
+  F(bvhNodesSoA_.firstTriIdx_);
+}
 
 void BVH::init(std::vector<Mesh*> &meshes) {
 
@@ -63,21 +72,28 @@ void BVH::initSoA(std::vector<Mesh*> &meshes, Data* data)
     triCount = data_->tVertexIdxCount_/3;
 
     // Allocate node pool in SoA, initialize with invalid values
+    CHECK(cudaMallocManaged(&bvhNodesSoA_.bb_min_, 2*triCount-1* sizeof(vec4)));
+    CHECK(cudaMallocManaged(&bvhNodesSoA_.bb_max_, 2*triCount-1* sizeof(vec4)));
+    CHECK(cudaMallocManaged(&bvhNodesSoA_.triCount_, 2*triCount-1* sizeof(int)));
+    CHECK(cudaMallocManaged(&bvhNodesSoA_.leftChildIdx_, 2*triCount-1* sizeof(int)));
+    CHECK(cudaMallocManaged(&bvhNodesSoA_.firstTriIdx_, 2*triCount-1* sizeof(int)));
+
     // bvhNodesSoA_.bb_min_.resize(2*triCount-1, vec4(-DBL_MAX));
     // bvhNodesSoA_.bb_max_.resize(2*triCount-1, vec4(DBL_MAX));
     // bvhNodesSoA_.triCount_.resize(2*triCount-1, -1);
     // bvhNodesSoA_.leftChildIdx_.resize(2*triCount-1, -1);
     // bvhNodesSoA_.firstTriIdx_.resize(2*triCount-1, -1);
-    bvhNodes_.resize(2*triCount-1);
+
+    // bvhNodes_.resize(2*triCount-1);
 
     // Initialize root node
-    // bvhNodesSoA_.leftChildIdx_[rootNodeIdx_] = 0;
-    // bvhNodesSoA_.firstTriIdx_[rootNodeIdx_] = 0;
-    // bvhNodesSoA_.triCount_[rootNodeIdx_] = triCount;
-    BVHNode & root = bvhNodes_[rootNodeIdx_];
-    root.leftChildIdx_ = 0;
-    root.firstTriIdx_ = 0;
-    root.triCount_ = triCount;
+    bvhNodesSoA_.leftChildIdx_[rootNodeIdx_] = 0;
+    bvhNodesSoA_.firstTriIdx_[rootNodeIdx_] = 0;
+    bvhNodesSoA_.triCount_[rootNodeIdx_] = triCount;
+    // BVHNode & root = bvhNodes_[rootNodeIdx_];
+    // root.leftChildIdx_ = 0;
+    // root.firstTriIdx_ = 0;
+    // root.triCount_ = triCount;
     updateNodeBoundsSoA(rootNodeIdx_);
 
     // Build BVH recursively
@@ -208,122 +224,122 @@ bool BVH::intersectBVH(const Ray& ray,
   }
 }
 
-bool BVH::intersectBVHSoA(const Ray &ray,
-                          Material& intersection_material,
-                          vec4 &intersection_point,
-                          vec4 &intersection_normal,
-                          double &intersection_distance) const {
+// bool BVH::intersectBVHSoA(const Ray &ray,
+//                           Material& intersection_material,
+//                           vec4 &intersection_point,
+//                           vec4 &intersection_normal,
+//                           double &intersection_distance) const {
 
-  int stack[64];
-  int stackPtr = 0;
+//   int stack[64];
+//   int stackPtr = 0;
 
-  stack[stackPtr++] = rootNodeIdx_;
-  bool hit = false;
+//   stack[stackPtr++] = rootNodeIdx_;
+//   bool hit = false;
 
-  while (stackPtr > 0){
+//   while (stackPtr > 0){
 
-    // Pop node from stack
-    int nodeIdx = stack[--stackPtr];
+//     // Pop node from stack
+//     int nodeIdx = stack[--stackPtr];
 
-    // Cache node data once
-    // vec4 bb_min = bvhNodesSoA_.bb_min_[nodeIdx];
-    // vec4 bb_max = bvhNodesSoA_.bb_max_[nodeIdx];
-    // int triCount = bvhNodesSoA_.triCount_[nodeIdx];
-    // int firstTriIdx = bvhNodesSoA_.firstTriIdx_[nodeIdx];
-    // int leftChildIdx = bvhNodesSoA_.leftChildIdx_[nodeIdx];
-    const BVHNode& node = bvhNodes_[nodeIdx];
-    double dummy;
+//     // Cache node data once
+//     // vec4 bb_min = bvhNodesSoA_.bb_min_[nodeIdx];
+//     // vec4 bb_max = bvhNodesSoA_.bb_max_[nodeIdx];
+//     // int triCount = bvhNodesSoA_.triCount_[nodeIdx];
+//     // int firstTriIdx = bvhNodesSoA_.firstTriIdx_[nodeIdx];
+//     // int leftChildIdx = bvhNodesSoA_.leftChildIdx_[nodeIdx];
+//     const BVHNode& node = bvhNodes_[nodeIdx];
+//     double dummy;
 
-    // Early exit if ray doesn't intersect node's bounding box
-    // if (!intersectAABB(ray, bb_min, bb_max, dummy)) {
-    if (!intersectAABB(ray, node.bb_min_, node.bb_max_, dummy)) {
-      continue;
-    }
+//     // Early exit if ray doesn't intersect node's bounding box
+//     // if (!intersectAABB(ray, bb_min, bb_max, dummy)) {
+//     if (!intersectAABB(ray, node.bb_min_, node.bb_max_, dummy)) {
+//       continue;
+//     }
 
-    if (node.triCount_ > 0) {
-      // Leaf node - test all triangles (SoA data layout)
-      double t;
-      vec4 p, n, d;
-      for (int i = node.firstTriIdx_; i < node.firstTriIdx_ + node.triCount_; i++) {
-        // Fetch vertex indices
-        int vi0 = data_->vertexIdx_[i * 3];
-        int vi1 = data_->vertexIdx_[i * 3 + 1];
-        int vi2 = data_->vertexIdx_[i * 3 + 2];
+//     if (node.triCount_ > 0) {
+//       // Leaf node - test all triangles (SoA data layout)
+//       double t;
+//       vec4 p, n, d;
+//       for (int i = node.firstTriIdx_; i < node.firstTriIdx_ + node.triCount_; i++) {
+//         // Fetch vertex indices
+//         int vi0 = data_->vertexIdx_[i * 3];
+//         int vi1 = data_->vertexIdx_[i * 3 + 1];
+//         int vi2 = data_->vertexIdx_[i * 3 + 2];
 
-        // Fetch vertex positions and normals
-        vec4 vp0 = data_->vertexPos_[vi0];
-        vec4 vp1 = data_->vertexPos_[vi1];
-        vec4 vp2 = data_->vertexPos_[vi2];
-        vec4 normal = data_->normals_[i];
-        vec4 vn0 = data_->vertexNormals_[vi0];
-        vec4 vn1 = data_->vertexNormals_[vi1];
-        vec4 vn2 = data_->vertexNormals_[vi2];
+//         // Fetch vertex positions and normals
+//         vec4 vp0 = data_->vertexPos_[vi0];
+//         vec4 vp1 = data_->vertexPos_[vi1];
+//         vec4 vp2 = data_->vertexPos_[vi2];
+//         vec4 normal = data_->normals_[i];
+//         vec4 vn0 = data_->vertexNormals_[vi0];
+//         vec4 vn1 = data_->vertexNormals_[vi1];
+//         vec4 vn2 = data_->vertexNormals_[vi2];
 
-        Mesh *mesh = data_->meshes_[vi0];
+//         Mesh *mesh = data_->meshes_[vi0];
 
-        // Fetch texture coordinates if available
-        double u0 = 0, u1 = 0, u2 = 0;
-        double v0 = 0, v1 = 0, v2 = 0;
-        if (mesh->hasTexture_) {
-          int iuv0 = data_->textureIdx_[i * 3];
-          int iuv1 = data_->textureIdx_[i * 3 + 1];
-          int iuv2 = data_->textureIdx_[i * 3 + 2];
-          u0 = data_->textureCoordinatesU_[iuv0];
-          u1 = data_->textureCoordinatesU_[iuv1];
-          u2 = data_->textureCoordinatesU_[iuv2];
-          v0 = data_->textureCoordinatesV_[iuv0];
-          v1 = data_->textureCoordinatesV_[iuv1];
-          v2 = data_->textureCoordinatesV_[iuv2];
-        }
+//         // Fetch texture coordinates if available
+//         double u0 = 0, u1 = 0, u2 = 0;
+//         double v0 = 0, v1 = 0, v2 = 0;
+//         if (mesh->hasTexture_) {
+//           int iuv0 = data_->textureIdx_[i * 3];
+//           int iuv1 = data_->textureIdx_[i * 3 + 1];
+//           int iuv2 = data_->textureIdx_[i * 3 + 2];
+//           u0 = data_->textureCoordinatesU_[iuv0];
+//           u1 = data_->textureCoordinatesU_[iuv1];
+//           u2 = data_->textureCoordinatesU_[iuv2];
+//           v0 = data_->textureCoordinatesV_[iuv0];
+//           v1 = data_->textureCoordinatesV_[iuv1];
+//           v2 = data_->textureCoordinatesV_[iuv2];
+//         }
 
-        // Intersect triangle
-        if (mesh->intersect_triangle_SoA(vp0, vp1, vp2, normal, vn0, vn1, vn2,
-                                         u0, u1, u2, v0, v1, v2, ray, p, n, d,
-                                         t)) {
-          if (t < intersection_distance) {
-            intersection_material = mesh->material_;
-            intersection_material.diffuse = d;
-            intersection_point = p;
-            intersection_normal = n;
-            intersection_distance = t;
-            hit = true;
-          }
-        }
-      }
-    } else {
-      double tminLeft, tminRight;
+//         // Intersect triangle
+//         if (mesh->intersect_triangle_SoA(vp0, vp1, vp2, normal, vn0, vn1, vn2,
+//                                          u0, u1, u2, v0, v1, v2, ray, p, n, d,
+//                                          t)) {
+//           if (t < intersection_distance) {
+//             intersection_material = mesh->material_;
+//             intersection_material.diffuse = d;
+//             intersection_point = p;
+//             intersection_normal = n;
+//             intersection_distance = t;
+//             hit = true;
+//           }
+//         }
+//       }
+//     } else {
+//       double tminLeft, tminRight;
 
-      // Cache node data once
-      // vec4 bb_min_left = bvhNodesSoA_.bb_min_[leftChildIdx];
-      // vec4 bb_max_left = bvhNodesSoA_.bb_max_[leftChildIdx];
-      // bool hitLeft = intersectAABB(ray, bb_min_left, bb_max_left, tminLeft);
-      bool hitLeft = intersectAABB(ray, bvhNodes_[node.leftChildIdx_].bb_min_, bvhNodes_[node.leftChildIdx_].bb_max_, tminLeft);
+//       // Cache node data once
+//       // vec4 bb_min_left = bvhNodesSoA_.bb_min_[leftChildIdx];
+//       // vec4 bb_max_left = bvhNodesSoA_.bb_max_[leftChildIdx];
+//       // bool hitLeft = intersectAABB(ray, bb_min_left, bb_max_left, tminLeft);
+//       bool hitLeft = intersectAABB(ray, bvhNodes_[node.leftChildIdx_].bb_min_, bvhNodes_[node.leftChildIdx_].bb_max_, tminLeft);
 
-      // vec4 bb_min_right = bvhNodesSoA_.bb_min_[leftChildIdx+1];
-      // vec4 bb_max_right = bvhNodesSoA_.bb_max_[leftChildIdx+1];
-      // bool hitRight = intersectAABB(ray, bb_min_right, bb_max_right, tminRight);
-      bool hitRight = intersectAABB(ray, bvhNodes_[node.leftChildIdx_+1].bb_min_, bvhNodes_[node.leftChildIdx_+1].bb_max_, tminRight);
+//       // vec4 bb_min_right = bvhNodesSoA_.bb_min_[leftChildIdx+1];
+//       // vec4 bb_max_right = bvhNodesSoA_.bb_max_[leftChildIdx+1];
+//       // bool hitRight = intersectAABB(ray, bb_min_right, bb_max_right, tminRight);
+//       bool hitRight = intersectAABB(ray, bvhNodes_[node.leftChildIdx_+1].bb_min_, bvhNodes_[node.leftChildIdx_+1].bb_max_, tminRight);
 
-      if (hitLeft && hitRight){
-        if (tminLeft < tminRight){
-          // Internal node - push children to stack: no recursion
-          stack[stackPtr++] = node.leftChildIdx_ + 1; // right child
-          stack[stackPtr++] = node.leftChildIdx_; // left child will be visited first.
-        }else{
-          stack[stackPtr++] = node.leftChildIdx_; // right child visited first
-          stack[stackPtr++] = node.leftChildIdx_+1; // left child
-        }
-      } else if (hitLeft) {
-        stack[stackPtr++] = node.leftChildIdx_; // left child will be visited first.
-      } else if (hitRight) {
-        stack[stackPtr++] = node.leftChildIdx_+1; // left child will be visited first.
-      }
+//       if (hitLeft && hitRight){
+//         if (tminLeft < tminRight){
+//           // Internal node - push children to stack: no recursion
+//           stack[stackPtr++] = node.leftChildIdx_ + 1; // right child
+//           stack[stackPtr++] = node.leftChildIdx_; // left child will be visited first.
+//         }else{
+//           stack[stackPtr++] = node.leftChildIdx_; // right child visited first
+//           stack[stackPtr++] = node.leftChildIdx_+1; // left child
+//         }
+//       } else if (hitLeft) {
+//         stack[stackPtr++] = node.leftChildIdx_; // left child will be visited first.
+//       } else if (hitRight) {
+//         stack[stackPtr++] = node.leftChildIdx_+1; // left child will be visited first.
+//       }
 
 
-    }
-  }
-  return hit;
-}
+//     }
+//   }
+//   return hit;
+// }
 
 // =============================================================================
 // Private Methods - AoS Version
@@ -434,54 +450,52 @@ void BVH::updateNodeBoundsSoA(int nodeIdx){
     vec4 v0 = data_->vertexPos_[i0];
     vec4 v1 = data_->vertexPos_[i1];
     vec4 v2 = data_->vertexPos_[i2];
-    // bvhNodesSoA_.bb_min_[nodeIdx] = fmin(bvhNodesSoA_.bb_min_[nodeIdx], v0);
-    // bvhNodesSoA_.bb_min_[nodeIdx] = fmin(bvhNodesSoA_.bb_min_[nodeIdx], v1);
-    // bvhNodesSoA_.bb_min_[nodeIdx] = fmin(bvhNodesSoA_.bb_min_[nodeIdx], v2);
-    // bvhNodesSoA_.bb_max_[nodeIdx] = fmax(bvhNodesSoA_.bb_max_[nodeIdx], v0);
-    // bvhNodesSoA_.bb_max_[nodeIdx] = fmax(bvhNodesSoA_.bb_max_[nodeIdx], v1);
-    // bvhNodesSoA_.bb_max_[nodeIdx] = fmax(bvhNodesSoA_.bb_max_[nodeIdx], v2);
-    node.bb_min_ = fmin(node.bb_min_, v0);
-    node.bb_min_ = fmin(node.bb_min_, v1);
-    node.bb_min_ = fmin(node.bb_min_, v2);
-    node.bb_max_ = fmax(node.bb_max_, v0);
-    node.bb_max_ = fmax(node.bb_max_, v1);
-    node.bb_max_ = fmax(node.bb_max_, v2);
+    bvhNodesSoA_.bb_min_[nodeIdx] = fmin(bvhNodesSoA_.bb_min_[nodeIdx], v0);
+    bvhNodesSoA_.bb_min_[nodeIdx] = fmin(bvhNodesSoA_.bb_min_[nodeIdx], v1);
+    bvhNodesSoA_.bb_min_[nodeIdx] = fmin(bvhNodesSoA_.bb_min_[nodeIdx], v2);
+    bvhNodesSoA_.bb_max_[nodeIdx] = fmax(bvhNodesSoA_.bb_max_[nodeIdx], v0);
+    bvhNodesSoA_.bb_max_[nodeIdx] = fmax(bvhNodesSoA_.bb_max_[nodeIdx], v1);
+    bvhNodesSoA_.bb_max_[nodeIdx] = fmax(bvhNodesSoA_.bb_max_[nodeIdx], v2);
+    // node.bb_min_ = fmin(node.bb_min_, v0);
+    // node.bb_min_ = fmin(node.bb_min_, v1);
+    // node.bb_min_ = fmin(node.bb_min_, v2);
+    // node.bb_max_ = fmax(node.bb_max_, v0);
+    // node.bb_max_ = fmax(node.bb_max_, v1);
+    // node.bb_max_ = fmax(node.bb_max_, v2);
   }
 }
-
 void BVH::subdivideSoA(int nodeIdx, int depth){
 
   // Debug output
   // std::cout << "subdivide() depth: " << depth << ", "
   //           << "nodeIdx: " << nodeIdx << ", "
-  //           << "node.triCount: " << bvhNodesSoA_.triCount_[nodeIdx] << std::endl;
+  //           << "node.triCount: " << bvhNodesSoA_.triCount_.at(nodeIdx) << std::endl;
 
   // Terminate recursion if node has few triangles
-  BVHNode & node = bvhNodes_[nodeIdx];
-  if (node.triCount_ <= 2) return;
+  if (bvhNodesSoA_.triCount_[nodeIdx] <= 2) return;
 
   // Determine split axis (cycle through x, y, z based on depth)
   int axis = depth % 3;
   double splitPos = medianSoA(axis, nodeIdx);
 
   // Partition triangles around split position
-  int i = node.firstTriIdx_;
+  int i = bvhNodesSoA_.firstTriIdx_[nodeIdx];
   inplace_partitionSoA(nodeIdx, splitPos, axis, i);
 
   // Abort split if one side is empty
-  int leftCount = i - node.firstTriIdx_;
-  if (leftCount == 0 || leftCount == node.triCount_) return;
+  int leftCount = i - bvhNodesSoA_.firstTriIdx_[nodeIdx];
+  if (leftCount == 0 || leftCount == bvhNodesSoA_.triCount_[nodeIdx]) return;
 
   // Create child nodes
   int leftChildIdx = nodesUsed_;
   int rightChildIdx = leftChildIdx + 1;
   nodesUsed_ = nodesUsed_ + 2;
-  bvhNodes_[leftChildIdx].firstTriIdx_ = node.firstTriIdx_;
-  bvhNodes_[leftChildIdx].triCount_ = leftCount;
-  bvhNodes_[rightChildIdx].firstTriIdx_ = i;
-  bvhNodes_[rightChildIdx].triCount_ = node.triCount_ - leftCount;
-  node.leftChildIdx_ = leftChildIdx;
-  node.triCount_ = 0;
+  bvhNodesSoA_.firstTriIdx_[leftChildIdx] = bvhNodesSoA_.firstTriIdx_[nodeIdx];
+  bvhNodesSoA_.triCount_[leftChildIdx] = leftCount;
+  bvhNodesSoA_.firstTriIdx_[rightChildIdx] = i;
+  bvhNodesSoA_.triCount_[rightChildIdx] = bvhNodesSoA_.triCount_[nodeIdx] - leftCount;
+  bvhNodesSoA_.leftChildIdx_[nodeIdx] = leftChildIdx;
+  bvhNodesSoA_.triCount_[nodeIdx] = 0;
   updateNodeBoundsSoA(leftChildIdx);
   updateNodeBoundsSoA(rightChildIdx);
 
@@ -489,6 +503,46 @@ void BVH::subdivideSoA(int nodeIdx, int depth){
   subdivideSoA(leftChildIdx, depth + 1);
   subdivideSoA(rightChildIdx, depth + 1);
 }
+// void BVH::subdivideSoA(int nodeIdx, int depth){
+
+//   // Debug output
+//   // std::cout << "subdivide() depth: " << depth << ", "
+//   //           << "nodeIdx: " << nodeIdx << ", "
+//   //           << "node.triCount: " << bvhNodesSoA_.triCount_[nodeIdx] << std::endl;
+
+//   // Terminate recursion if node has few triangles
+//   BVHNode & node = bvhNodes_[nodeIdx];
+//   if (node.triCount_ <= 2) return;
+
+//   // Determine split axis (cycle through x, y, z based on depth)
+//   int axis = depth % 3;
+//   double splitPos = medianSoA(axis, nodeIdx);
+
+//   // Partition triangles around split position
+//   int i = node.firstTriIdx_;
+//   inplace_partitionSoA(nodeIdx, splitPos, axis, i);
+
+//   // Abort split if one side is empty
+//   int leftCount = i - node.firstTriIdx_;
+//   if (leftCount == 0 || leftCount == node.triCount_) return;
+
+//   // Create child nodes
+//   int leftChildIdx = nodesUsed_;
+//   int rightChildIdx = leftChildIdx + 1;
+//   nodesUsed_ = nodesUsed_ + 2;
+//   bvhNodes_[leftChildIdx].firstTriIdx_ = node.firstTriIdx_;
+//   bvhNodes_[leftChildIdx].triCount_ = leftCount;
+//   bvhNodes_[rightChildIdx].firstTriIdx_ = i;
+//   bvhNodes_[rightChildIdx].triCount_ = node.triCount_ - leftCount;
+//   node.leftChildIdx_ = leftChildIdx;
+//   node.triCount_ = 0;
+//   updateNodeBoundsSoA(leftChildIdx);
+//   updateNodeBoundsSoA(rightChildIdx);
+
+//   // Recursively subdivide children
+//   subdivideSoA(leftChildIdx, depth + 1);
+//   subdivideSoA(rightChildIdx, depth + 1);
+// }
 
 void BVH::inplace_partitionSoA(int nodeIdx, double splitPos, int axis, int& i){
   BVHNode& node = bvhNodes_[nodeIdx];
@@ -576,3 +630,4 @@ double BVH::median_inplace(std::vector<double>& a) {
     return 0.5 * (lo + hi);
   }
 }
+

@@ -1,5 +1,5 @@
 // ============================================================================
-// Computer Graphics - TU Dortmund
+// Computer Graphics(Graphische Datenverarbeitung) - TU Dortmund
 // Implementation by Hyovin Kwak (Instructor: Prof. Dr. Mario Botsch)
 //
 // This file contains my solutions to the course exercises.
@@ -31,7 +31,7 @@ void Raytracer::init_cuda(const std::string &filename){
   buildSoA();
   bvh.initSoA(meshes_, &data_);
   initDevice();
-  copyToDevice();
+  allocateToDevice();
 }
 
 
@@ -44,8 +44,7 @@ void Raytracer::initDevice(void){
   CHECK(cudaSetDevice(dev));
 }
 
-void Raytracer::allocateToDevice(size_t &new_bytes, size_t &old_bytes, void *ptr){
-
+void Raytracer::allocate(size_t new_bytes, size_t &old_bytes, void* &ptr){
   // (re)allocate only if size changed
   if (new_bytes != old_bytes) {
     if (ptr) {
@@ -54,20 +53,25 @@ void Raytracer::allocateToDevice(size_t &new_bytes, size_t &old_bytes, void *ptr
       old_bytes = 0;
     }
     old_bytes = new_bytes;
-    CHECK(cudaMalloc((&d_pixels_), new_bytes));
-    CHECK(cudaMemset(d_pixels_, 0, new_bytes));
+    CHECK(cudaMalloc((&ptr), old_bytes));
+    CHECK(cudaMemset(ptr, 0, old_bytes));
   }
 }
 
-void Raytracer::copyToDevice() {
-
-  // compute required pixel size safely
+void Raytracer::allocateToDevice() {
+  // allocate nPixels
   size_t nPixels = static_cast<size_t>(camera_.width_) * camera_.height_;
-  size_t bytes   = nPixels * sizeof(vec4);
-  allocateToDevice(bytes, d_pixels_bytes_, d_pixels_);
+  size_t pixels_bytes   = nPixels * sizeof(vec4);
+  // CHECK(cudaMalloc((&d_pixels_), pixels_bytes));
+  // CHECK(cudaMemset(d_pixels_, 0, pixels_bytes));
+  allocate(pixels_bytes, d_pixels_bytes_, reinterpret_cast<void*&>(d_pixels_)); // TODO
 
+  // allocate Lights
+  size_t nLights = lights_.size();
+  size_t lights_bytes = nLights * sizeof(Light);
+  allocate(lights_bytes, d_lights_bytes_, reinterpret_cast<void*&>(d_lights_));
+  // CHECK(cudaMemcpy(d_A, h_A, nBytes, cudaMemcpyHostToDevice)); TODO: lights to array!
 
-  // TODO: allocate/copy your other device buffers here (lights, geometry, BVH…)
 }
 
 void Raytracer::compute_image_cuda(){
@@ -78,13 +82,8 @@ void Raytracer::compute_image_cuda(){
   Image tmpimage;
   tmpimage.resize(camera_.width_, camera_.height_);
 
-  // malloc device memory for lights and copy from host
-  int numLights = lights_.size();
-  Light* dLights;
-  CHECK(cudaMalloc(&dLights, numLights * sizeof(Light)));
-  CHECK(cudaMemcpy(dLights, lights_.data(), numLights * sizeof(Light), cudaMemcpyHostToDevice));
-
   // invoke kernel at host side
+  size_t nPixels = static_cast<size_t>(camera_.width_) * camera_.height_;
   int nThreads = 32;
   dim3 block (nThreads, nThreads);
   dim3 grid ((nPixels+block.x-1)/block.x, (nPixels+block.y-1)/block.y);
@@ -116,50 +115,54 @@ void Raytracer::buildSoA(){
 
   std::cout << "buildSoA...";
 
-  /// SoA memory allocation
-  data_.meshes_ = (stMesh**)malloc(data_.tVertexCount_*sizeof(stMesh*));
-  data_.vertexPos_ = (vec4*)malloc(data_.tVertexCount_*sizeof(vec4));
-  data_.vertexIdx_ = (int*)malloc(data_.tVertexIdxCount_*sizeof(int));
-  data_.textureCoordinatesU_ = (double*)malloc(data_.tTextCoordCount_*sizeof(double));
-  data_.textureCoordinatesV_ = (double*)malloc(data_.tTextCoordCount_*sizeof(double));
-  data_.textureIdx_ = (int*)malloc(data_.tTextIdxCount_*sizeof(int));
-  data_.firstVertex_ = (int*)malloc(data_.tMeshCount_*sizeof(int));
-  data_.vertexCount_ = (int*)malloc(data_.tMeshCount_*sizeof(int));
-  data_.firstVertexIdx_ = (int*)malloc(data_.tMeshCount_*sizeof(int));
-  data_.vertexIdxCount_ = (int*)malloc(data_.tMeshCount_*sizeof(int));
-  data_.firstTextCoord_ = (int*)malloc(data_.tMeshCount_*sizeof(int));
-  data_.textCoordCount_ = (int*)malloc(data_.tMeshCount_*sizeof(int));
-  data_.firstTextIdx_ = (int*)malloc(data_.tMeshCount_*sizeof(int));
-  data_.textIdxCount_ = (int*)malloc(data_.tMeshCount_*sizeof(int));
-  data_.normals_ = (vec4*)malloc(data_.tVertexIdxCount_/3*sizeof(vec4)); // triangle
-  data_.vertexNormals_ = (vec4*)malloc(data_.tVertexCount_*sizeof(vec4));
+  /// SoA memory allocation: Unified Memory!
+  // per-vertex / indices / per-tri
+  CHECK(cudaMallocManaged(&data_.vertexPos_,         data_.tVertexCount_    * sizeof(vec4)));
+  CHECK(cudaMallocManaged(&data_.vertexNormals_,     data_.tVertexCount_    * sizeof(vec4)));
+  CHECK(cudaMallocManaged(&data_.vertexIdx_,         data_.tVertexIdxCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_.textureIdx_,        data_.tTextIdxCount_   * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_.textureCoordinatesU_, data_.tTextCoordCount_ * sizeof(double)));
+  CHECK(cudaMallocManaged(&data_.textureCoordinatesV_, data_.tTextCoordCount_ * sizeof(double)));
+  CHECK(cudaMallocManaged(&data_.normals_,           (data_.tVertexIdxCount_/3) * sizeof(vec4)));
+
+  // per-vertex mesh ownership (ID instead of stMesh)
+  CHECK(cudaMallocManaged(&data_.vertexMeshId_,      data_.tVertexCount_    * sizeof(int)));
+
+  // per-mesh metadata
+  CHECK(cudaMallocManaged(&data_.firstVertex_,       data_.tMeshCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_.vertexCount_,       data_.tMeshCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_.firstVertexIdx_,    data_.tMeshCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_.vertexIdxCount_,    data_.tMeshCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_.firstTextCoord_,    data_.tMeshCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_.textCoordCount_,    data_.tMeshCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_.firstTextIdx_,      data_.tMeshCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_.textIdxCount_,      data_.tMeshCount_ * sizeof(int)));
+
+  // per-mesh texture tables
+  /// count total texels
+  for (Mesh* m : meshes_){
+    data_.tTotalTexels_ += size_t(m->texture_.width()) * m->texture_.height();
+  }
+  CHECK(cudaMallocManaged(&data_.meshTexels_,        data_.tTotalTexels_ * sizeof(vec4)));
+  CHECK(cudaMallocManaged(&data_.meshTexWidth_,      (size_t)data_.tMeshCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_.meshTexHeight_,     (size_t)data_.tMeshCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_.meshTexOffset_,     (size_t)data_.tMeshCount_ * sizeof(size_t)));
 
 
   /// Data copy per Mesh
   int meshIdx = 0;
-  int vbase = 0; // vertex base
-  int tbase = 0; // texture base
-  int ibase = 0; // index
+  size_t meshTexOffset = 0;
+  int vbase   = 0; // vertex base
+  int tbase   = 0; // texture base
+  int ibase   = 0; // index
   for (Mesh* mesh : meshes_){
-
-    /// build stMesh
-    stMesh* stmesh = new stMesh();
-    stmesh->hasTexture = mesh->hasTexture_;
-    stmesh->width = mesh->texture_.width();
-    stmesh->height = mesh->texture_.height();
-    for (int x = 0; x < mesh->texture_.width(); x++){
-      for (int y = 0; y < mesh->texture_.height(); y++){
-        stmesh->texel(x, y) = mesh->texture_(x, y);
-      }
-    }
-
     /// Copy vertex data
     int vertexCount = mesh->vertices_.size();
     int count = 0;
     for (Vertex vertex : mesh->vertices_){
       data_.vertexPos_[vbase+count] = vertex.position;
       data_.vertexNormals_[vbase+count] = vertex.normal;
-      data_.meshes_[vbase+count] = stmesh;
+      data_.vertexMeshId_[vbase+count] = meshIdx;
       count++;
     }
     data_.firstVertex_[meshIdx] = vbase;
@@ -191,10 +194,28 @@ void Raytracer::buildSoA(){
     data_.firstTextIdx_[meshIdx] = ibase;
     data_.textIdxCount_[meshIdx] = count*3;
 
+    /// per-mesh texture upload into UM (one block per mesh)
+    if (mesh->hasTexture_){
+      const int W = mesh->texture_.width();
+      const int H = mesh->texture_.height();
+      data_.meshTexWidth_[meshIdx] = W;
+      data_.meshTexHeight_[meshIdx] = H;
+      data_.meshTexOffset_[meshIdx] = meshTexOffset;
+      for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x)
+          data_.meshTexels_[meshTexOffset + y * size_t(W) + x] = mesh->texture_(x, y);
+      meshTexOffset += size_t(W) * H;
+    }else{
+      data_.meshTexWidth_[meshIdx] = -1;
+      data_.meshTexHeight_[meshIdx] = -1;
+      data_.meshTexOffset_[meshIdx] = size_t(-1);
+    }
+
     // base increment
     vbase = vbase + vertexCount;
     ibase = ibase + count*3;
     tbase = tbase + textureCount;
+    meshIdx++;
   }
   std::cout << " done. \n" << std::flush;
 }
@@ -205,40 +226,8 @@ void Raytracer::buildSoA(){
  */
 void Raytracer::pre_read_scene(const std::string &filename)
 {
-  // // Data(concat Vectors) clean up
-  if (data_.meshes_ != nullptr) free(data_.meshes_);
-  if (data_.vertexPos_ != nullptr) free(data_.vertexPos_);
-  if (data_.vertexIdx_ != nullptr) free(data_.vertexIdx_);
-  if (data_.textureCoordinatesU_ != nullptr) free(data_.textureCoordinatesU_);
-  if (data_.textureCoordinatesV_ != nullptr) free(data_.textureCoordinatesV_);
-  if (data_.textureIdx_ != nullptr) free(data_.textureIdx_);
-  if (data_.firstVertex_ != nullptr) free(data_.firstVertex_);
-  if (data_.vertexCount_ != nullptr) free(data_.vertexCount_);
-  if (data_.firstVertexIdx_ != nullptr) free(data_.firstVertexIdx_);
-  if (data_.vertexIdxCount_ != nullptr) free(data_.vertexIdxCount_);
-  if (data_.firstTextCoord_ != nullptr) free(data_.firstTextCoord_);
-  if (data_.textCoordCount_ != nullptr) free(data_.textCoordCount_);
-  if (data_.firstTextIdx_ != nullptr) free(data_.firstTextIdx_);
-  if (data_.textIdxCount_ != nullptr) free(data_.textIdxCount_);
-  if (data_.normals_ != nullptr) free(data_.normals_);
-  if (data_.vertexNormals_ != nullptr) free(data_.vertexNormals_);
-
-  // data_.meshes_.clear();
-  // data_.vertexPos_.clear();
-  // data_.vertexIdx_.clear();
-  // data_.textureCoordinatesU_.clear();
-  // data_.textureCoordinatesV_.clear();
-  // data_.textureIdx_.clear();
-  // data_.firstVertex_.clear();
-  // data_.vertexCount_.clear();
-  // data_.firstVertexIdx_.clear();
-  // data_.vertexIdxCount_.clear();
-  // data_.firstTextCoord_.clear();
-  // data_.textCoordCount_.clear();
-  // data_.firstTextIdx_.clear();
-  // data_.textIdxCount_.clear();
-  // data_.normals_.clear();
-  // data_.vertexNormals_.clear();
+  // Data(concat Vectors) clean up
+  dataFree();
 
   /// Pre-read variables reset
   data_.tMeshCount_ = 0;
@@ -285,34 +274,40 @@ void Raytracer::freeDevice() {
     d_pixels_ = nullptr;
     d_pixels_bytes_ = 0;
   }
+  if (d_lights_) {
+    CHECK(cudaFree(d_lights_));
+    d_lights_ = nullptr;
+    d_lights_bytes_ = 0;
+  }
+}
+void Raytracer::dataFree(){
+  auto F = [&](auto*& p){ if (p) { cudaFree(p); p = nullptr; } };
+  F(data_.vertexPos_);
+  F(data_.vertexNormals_);
+  F(data_.vertexIdx_);
+  F(data_.textureIdx_);
+  F(data_.textureCoordinatesU_);
+  F(data_.textureCoordinatesV_);
+  F(data_.firstVertex_);
+  F(data_.vertexCount_);
+  F(data_.firstVertexIdx_);
+  F(data_.vertexIdxCount_);
+  F(data_.firstTextCoord_);
+  F(data_.textCoordCount_);
+  F(data_.firstTextIdx_);
+  F(data_.textIdxCount_);
+  F(data_.normals_);
+  F(data_.vertexMeshId_);
+  F(data_.meshTexWidth_);
+  F(data_.meshTexHeight_);
+  F(data_.meshTexels_);
+  F(data_.meshTexWidth_);
+  F(data_.meshTexHeight_);
+  F(data_.meshTexOffset_);
 }
 
 Raytracer::~Raytracer(){
-
-  if (data_.meshes_ != nullptr){
-    // delete exactly one stMesh.
-    for (int i = 0; i < data_.tMeshCount_; i++){
-      int vbase = data_.firstVertex_[i];
-      delete data_.meshes_[vbase];
-    }
-    free(data_.meshes_);
-  }
-  if (data_.vertexPos_ != nullptr) free(data_.vertexPos_);
-  if (data_.vertexIdx_ != nullptr) free(data_.vertexIdx_);
-  if (data_.textureCoordinatesU_ != nullptr) free(data_.textureCoordinatesU_);
-  if (data_.textureCoordinatesV_ != nullptr) free(data_.textureCoordinatesV_);
-  if (data_.textureIdx_ != nullptr) free(data_.textureIdx_);
-  if (data_.firstVertex_ != nullptr) free(data_.firstVertex_);
-  if (data_.vertexCount_ != nullptr) free(data_.vertexCount_);
-  if (data_.firstVertexIdx_ != nullptr) free(data_.firstVertexIdx_);
-  if (data_.vertexIdxCount_ != nullptr) free(data_.vertexIdxCount_);
-  if (data_.firstTextCoord_ != nullptr) free(data_.firstTextCoord_);
-  if (data_.textCoordCount_ != nullptr) free(data_.textCoordCount_);
-  if (data_.firstTextIdx_ != nullptr) free(data_.firstTextIdx_);
-  if (data_.textIdxCount_ != nullptr) free(data_.textIdxCount_);
-  if (data_.normals_ != nullptr) free(data_.normals_);
-  if (data_.vertexNormals_ != nullptr) free(data_.vertexNormals_);
-
+  dataFree();
   freeDevice();
 }
 
@@ -369,6 +364,7 @@ void Raytracer::pre_read_obj(const char* _filename)
 
     // material file
     if (header == "mtllib") {
+      /// too expensive to read the file for Raytracer!
       continue;
     }
 

@@ -1,5 +1,5 @@
 // ============================================================================
-// Computer Graphics - TU Dortmund
+// Computer Graphics(Graphische Datenverarbeitung) - TU Dortmund
 // Implementation by Hyovin Kwak (Instructor: Prof. Dr. Mario Botsch)
 //
 // This file contains my solutions to the course exercises.
@@ -15,19 +15,19 @@
 #include <cuda_runtime.h>
 
 
-struct stMesh {
+/* struct stMesh { */
 
-  bool hasTexture = false;
-  unsigned width = 0, height = 0;
-  vec4* pixelsTexture = nullptr;
+/*   bool hasTexture = false; */
+/*   unsigned width = 0, height = 0; */
+/*   vec4* pixelsTexture = nullptr; */
 
-  inline size_t idx(unsigned x, unsigned y) const {
-    const unsigned s = width;
-    return size_t (y) * s + x;
-  }
-  inline vec4&       texel(unsigned x, unsigned y)       { return pixelsTexture[idx(x,y)]; }
-  inline const vec4& texel(unsigned x, unsigned y) const { return pixelsTexture[idx(x,y)]; }
-};
+/*   inline size_t idx(unsigned x, unsigned y) const { */
+/*     const unsigned s = width; */
+/*     return size_t (y) * s + x; */
+/*   } */
+/*   inline vec4&       texel(unsigned x, unsigned y)       { return pixelsTexture[idx(x,y)]; } */
+/*   inline const vec4& texel(unsigned x, unsigned y) const { return pixelsTexture[idx(x,y)]; } */
+/* }; */
 
 
 /**
@@ -44,9 +44,10 @@ struct Data {
 
   /// ===== total coounts from pre-read-scene =====
   int tMeshCount_ = 0, tVertexCount_ = 0, tVertexIdxCount_ = 0, tTextCoordCount_ = 0, tTextIdxCount_ = 0;
+  size_t tTotalTexels_ = 0;
 
   // ===== Per-vertex data (vbase) =====
-  stMesh** meshes_ = nullptr;           ///< Mesh pointer for each vertex
+  int*  vertexMeshId_ = nullptr;        ///< per-vertex: which mesh this vertex belongs to
   vec4* vertexPos_ = nullptr;           ///< Vertex positions
   vec4* vertexNormals_ = nullptr;       ///< Vertex normals
 
@@ -67,8 +68,13 @@ struct Data {
   int* firstTextCoord_ = nullptr;  int* textCoordCount_ = nullptr;
   int* firstTextIdx_ = nullptr;    int* textIdxCount_ = nullptr;
 
-  /// subs
-  // int*  vertexMeshId_ = nullptr;      // [VertexCount]
+  /// Texture
+  // per-mesh texture info (one allocation per mesh for texels)
+  int *meshTexWidth_ = nullptr;  // [tMeshCount_]
+  int *meshTexHeight_ = nullptr; // [tMeshCount_]
+  vec4 *meshTexels_ = nullptr;  // [tMeshCount_] of pointers to [W*H] UM blocks
+  size_t* meshTexOffset_= nullptr;   // [tMeshCount_], start index into texels_ for each mesh
+
 };
 
 #endif // MYDATA_H

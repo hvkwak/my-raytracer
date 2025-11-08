@@ -7,7 +7,7 @@
 // ============================================================================
 
 #include "Plane.h"
-#include "utils/vec3.h"
+#include "utils/vec4.h"
 #include "utils/Material.h"
 
 /**
@@ -20,8 +20,8 @@
  * @param intersection_distance Distance from ray origin to intersection (output)
  * @return true if ray intersects the plane
  */
-bool Plane::intersect(const Ray& ray, vec3& intersection_point,
-                      vec3& intersection_normal, vec3& intersection_diffuse,
+bool Plane::intersect(const Ray& ray, vec4& intersection_point,
+                      vec4& intersection_normal, vec4& intersection_diffuse,
                       double& intersection_distance) const
 {
     intersection_diffuse = material_.diffuse;
