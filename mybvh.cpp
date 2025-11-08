@@ -60,7 +60,7 @@ void BVH::initSoA(std::vector<Mesh*> &meshes, Data* data)
   std::cout << "Build BVH...";
   if (meshes.size() > 0){
     data_ = data;
-    triCount = data_->vertexIdx_.size() / 3;
+    triCount = data_->tVertexIdxCount_/3;
 
     // Allocate node pool in SoA, initialize with invalid values
     // bvhNodesSoA_.bb_min_.resize(2*triCount-1, vec4(-DBL_MAX));
