@@ -8,7 +8,6 @@
 
 #include "Raytracer.h"
 #include "utils/vec4.h"
-#include "utils/vec4.h"
 #include "utils/Material.h"
 #include <fstream>
 #include <sstream>
@@ -29,7 +28,7 @@ void Raytracer::init_cuda(const std::string &filename){
   pre_read_scene(filename);
   read_scene(filename);
   build_Data();
-  bvh.initSoA(meshes_, &data_);
+  bvh.initSoA(meshes_, data_);
   init_device();
   prepareDeviceResources();
 }
@@ -70,8 +69,7 @@ void Raytracer::prepareDeviceResources() {
   size_t lights_bytes = nLights * sizeof(Light);
   allocate(lights_bytes, d_lights_bytes_, reinterpret_cast<void*&>(d_lightsPosition_));
   allocate(lights_bytes, d_lights_bytes_, reinterpret_cast<void*&>(d_lightsColor_));
-  copyLights();
-
+  copyLights(); // from std::vector
   // CHECK(cudaMemcpy(d_A, h_A, nBytes, cudaMemcpyHostToDevice)); TODO: lights to array!
 }
 
@@ -105,12 +103,8 @@ void Raytracer::compute_image_cuda(){
   dim3 block (nThreads, nThreads);
   dim3 grid ((nPixels+block.x-1)/block.x, (nPixels+block.y-1)/block.y);
 
-  // compute_image_device<<<grid, block>>>
+  // TODO: compute_image_device<<<grid, block>>>
 
-  // traceOnGPU<<<grid, block>>>(dPixels, camera_.width_, camera_.height_, camera_, dLights, numLights, data_,
-  //                             getBackground(),
-  //                             getAmbience(),
-  //                             getMaxDepth());
 
   // // synchronize GPU execution
   // CHECK(cudaDeviceSynchronize());
@@ -120,7 +114,7 @@ void Raytracer::compute_image_cuda(){
 
   // // free device memory
   // CHECK(cudaFree(dPixels));
-  // CHECK(cudaFree(dLights));
+  // CHECK(cudaFree(dLights));init_cpu(filename);
 
   // std::cout << " done." << std::endl;
 }
@@ -136,44 +130,46 @@ void Raytracer::build_Data(){
 
   /// SoA memory allocation: Unified Memory!
   // per-vertex / indices / per-tri
-  CHECK(cudaMallocManaged(&data_.vertexPos_,         data_.tVertexCount_    * sizeof(vec4)));
-  CHECK(cudaMallocManaged(&data_.vertexNormals_,     data_.tVertexCount_    * sizeof(vec4)));
-  CHECK(cudaMallocManaged(&data_.vertexIdx_,         data_.tVertexIdxCount_ * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_.textureIdx_,        data_.tTextIdxCount_   * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_.textureCoordinatesU_, data_.tTextCoordCount_ * sizeof(double)));
-  CHECK(cudaMallocManaged(&data_.textureCoordinatesV_, data_.tTextCoordCount_ * sizeof(double)));
-  CHECK(cudaMallocManaged(&data_.normals_,           (data_.tVertexIdxCount_/3) * sizeof(vec4)));
+
+  CHECK(cudaMallocManaged(&data_,                                             sizeof(Data)));
+  CHECK(cudaMallocManaged(&data_->vertexPos_,         data_->tVertexCount_    * sizeof(vec4)));
+  CHECK(cudaMallocManaged(&data_->vertexNormals_,     data_->tVertexCount_    * sizeof(vec4)));
+  CHECK(cudaMallocManaged(&data_->vertexIdx_,         data_->tVertexIdxCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->textureIdx_,        data_->tTextIdxCount_   * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->textureCoordinatesU_, data_->tTextCoordCount_ * sizeof(double)));
+  CHECK(cudaMallocManaged(&data_->textureCoordinatesV_, data_->tTextCoordCount_ * sizeof(double)));
+  CHECK(cudaMallocManaged(&data_->normals_,           (data_->tVertexIdxCount_/3) * sizeof(vec4)));
 
   // per-vertex mesh ownership (ID instead of stMesh)
-  CHECK(cudaMallocManaged(&data_.vertexMeshId_,      data_.tVertexCount_    * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->vertexMeshId_,      data_->tVertexCount_    * sizeof(int)));
 
   // per-mesh metadata
-  CHECK(cudaMallocManaged(&data_.firstVertex_,       data_.tMeshCount_ * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_.vertexCount_,       data_.tMeshCount_ * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_.firstVertexIdx_,    data_.tMeshCount_ * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_.vertexIdxCount_,    data_.tMeshCount_ * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_.firstTextCoord_,    data_.tMeshCount_ * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_.textCoordCount_,    data_.tMeshCount_ * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_.firstTextIdx_,      data_.tMeshCount_ * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_.textIdxCount_,      data_.tMeshCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->firstVertex_,       data_->tMeshCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->vertexCount_,       data_->tMeshCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->firstVertexIdx_,    data_->tMeshCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->vertexIdxCount_,    data_->tMeshCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->firstTextCoord_,    data_->tMeshCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->textCoordCount_,    data_->tMeshCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->firstTextIdx_,      data_->tMeshCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->textIdxCount_,      data_->tMeshCount_ * sizeof(int)));
 
   // per-mesh texture tables
   /// count total texels
   for (Mesh* m : meshes_){
-    data_.tTotalTexels_ += size_t(m->texture_.width()) * m->texture_.height();
+    data_->tTotalTexels_ += size_t(m->texture_.width()) * m->texture_.height();
   }
-  CHECK(cudaMallocManaged(&data_.meshTexels_,        data_.tTotalTexels_ * sizeof(vec4)));
-  CHECK(cudaMallocManaged(&data_.meshTexWidth_,      (size_t)data_.tMeshCount_ * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_.meshTexHeight_,     (size_t)data_.tMeshCount_ * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_.meshTexOffset_,     (size_t)data_.tMeshCount_ * sizeof(size_t)));
+  CHECK(cudaMallocManaged(&data_->meshTexels_,        data_->tTotalTexels_ * sizeof(vec4)));
+  CHECK(cudaMallocManaged(&data_->meshTexWidth_,      (size_t)data_->tMeshCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->meshTexHeight_,     (size_t)data_->tMeshCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->meshTexOffset_,     (size_t)data_->tMeshCount_ * sizeof(size_t)));
 
   // Material per Mesh
-  CHECK(cudaMallocManaged(&data_.materialAmbient_,    data_.tMeshCount_ * sizeof(vec4)));
-  CHECK(cudaMallocManaged(&data_.materialDiffuse_,    data_.tMeshCount_ * sizeof(vec4)));
-  CHECK(cudaMallocManaged(&data_.materialSpecular_,   data_.tMeshCount_ * sizeof(vec4)));
-  CHECK(cudaMallocManaged(&data_.materialMirror_,     data_.tMeshCount_ * sizeof(double)));
-  CHECK(cudaMallocManaged(&data_.materialShininess_,  data_.tMeshCount_ * sizeof(double)));
-  CHECK(cudaMallocManaged(&data_.materialShadowable_, data_.tMeshCount_ * sizeof(bool)));
+  CHECK(cudaMallocManaged(&data_->materialAmbient_,    data_->tMeshCount_ * sizeof(vec4)));
+  CHECK(cudaMallocManaged(&data_->materialDiffuse_,    data_->tMeshCount_ * sizeof(vec4)));
+  CHECK(cudaMallocManaged(&data_->materialSpecular_,   data_->tMeshCount_ * sizeof(vec4)));
+  CHECK(cudaMallocManaged(&data_->materialMirror_,     data_->tMeshCount_ * sizeof(double)));
+  CHECK(cudaMallocManaged(&data_->materialShininess_,  data_->tMeshCount_ * sizeof(double)));
+  CHECK(cudaMallocManaged(&data_->materialShadowable_, data_->tMeshCount_ * sizeof(bool)));
 
   /// Data copy per Mesh
   int meshIdx = 0;
@@ -186,64 +182,64 @@ void Raytracer::build_Data(){
     int vertexCount = mesh->vertices_.size();
     int count = 0;
     for (Vertex vertex : mesh->vertices_){
-      data_.vertexPos_[vbase+count] = vertex.position;
-      data_.vertexNormals_[vbase+count] = vertex.normal;
-      data_.vertexMeshId_[vbase+count] = meshIdx;
+      data_->vertexPos_[vbase+count] = vertex.position;
+      data_->vertexNormals_[vbase+count] = vertex.normal;
+      data_->vertexMeshId_[vbase+count] = meshIdx;
       count++;
     }
-    data_.firstVertex_[meshIdx] = vbase;
-    data_.vertexCount_[meshIdx] = vertexCount;
+    data_->firstVertex_[meshIdx] = vbase;
+    data_->vertexCount_[meshIdx] = vertexCount;
 
     /// Copy texture coordinates
     int textureCount = mesh->u_coordinates_.size();
     for (int t = 0; t < textureCount; t++){
-      data_.textureCoordinatesU_[tbase + t] = mesh->u_coordinates_[t];
-      data_.textureCoordinatesV_[tbase + t] = mesh->v_coordinates_[t];
+      data_->textureCoordinatesU_[tbase + t] = mesh->u_coordinates_[t];
+      data_->textureCoordinatesV_[tbase + t] = mesh->v_coordinates_[t];
     }
-    data_.firstTextCoord_[meshIdx] = tbase;
-    data_.textCoordCount_[meshIdx] = textureCount;
+    data_->firstTextCoord_[meshIdx] = tbase;
+    data_->textCoordCount_[meshIdx] = textureCount;
 
     /// Copy triangle indices
     count = 0;
     for (Triangle triangle : mesh->triangles_){
-      data_.vertexIdx_[ibase+3*count] = (vbase + triangle.i0);
-      data_.vertexIdx_[ibase+3*count+1] = (vbase + triangle.i1);
-      data_.vertexIdx_[ibase+3*count+2] = (vbase + triangle.i2);
-      data_.textureIdx_[ibase+3*count] = (tbase + triangle.iuv0);
-      data_.textureIdx_[ibase+3*count+1] = (tbase + triangle.iuv1);
-      data_.textureIdx_[ibase+3*count+2] = (tbase + triangle.iuv2);
-      data_.normals_[ibase/3 + count] = (triangle.normal);
+      data_->vertexIdx_[ibase+3*count] = (vbase + triangle.i0);
+      data_->vertexIdx_[ibase+3*count+1] = (vbase + triangle.i1);
+      data_->vertexIdx_[ibase+3*count+2] = (vbase + triangle.i2);
+      data_->textureIdx_[ibase+3*count] = (tbase + triangle.iuv0);
+      data_->textureIdx_[ibase+3*count+1] = (tbase + triangle.iuv1);
+      data_->textureIdx_[ibase+3*count+2] = (tbase + triangle.iuv2);
+      data_->normals_[ibase/3 + count] = (triangle.normal);
       count++;
     }
-    data_.firstVertexIdx_[meshIdx] = ibase;
-    data_.vertexIdxCount_[meshIdx] = count*3;
-    data_.firstTextIdx_[meshIdx] = ibase;
-    data_.textIdxCount_[meshIdx] = count*3;
+    data_->firstVertexIdx_[meshIdx] = ibase;
+    data_->vertexIdxCount_[meshIdx] = count*3;
+    data_->firstTextIdx_[meshIdx] = ibase;
+    data_->textIdxCount_[meshIdx] = count*3;
 
     /// per-mesh texture upload into UM (one block per mesh)
     if (mesh->hasTexture_){
       const int W = mesh->texture_.width();
       const int H = mesh->texture_.height();
-      data_.meshTexWidth_[meshIdx] = W;
-      data_.meshTexHeight_[meshIdx] = H;
-      data_.meshTexOffset_[meshIdx] = meshTexOffset;
+      data_->meshTexWidth_[meshIdx] = W;
+      data_->meshTexHeight_[meshIdx] = H;
+      data_->meshTexOffset_[meshIdx] = meshTexOffset;
       for (int y = 0; y < H; ++y)
         for (int x = 0; x < W; ++x)
-          data_.meshTexels_[meshTexOffset + y * size_t(W) + x] = mesh->texture_(x, y);
+          data_->meshTexels_[meshTexOffset + y * size_t(W) + x] = mesh->texture_(x, y);
       meshTexOffset += size_t(W) * H;
     }else{
-      data_.meshTexWidth_[meshIdx] = -1;
-      data_.meshTexHeight_[meshIdx] = -1;
-      data_.meshTexOffset_[meshIdx] = size_t(-1);
+      data_->meshTexWidth_[meshIdx] = -1;
+      data_->meshTexHeight_[meshIdx] = -1;
+      data_->meshTexOffset_[meshIdx] = size_t(-1);
     }
 
     // add Material
-    data_.materialAmbient_[meshIdx] = mesh->material_.ambient;
-    data_.materialDiffuse_[meshIdx] = mesh->material_.diffuse;
-    data_.materialSpecular_[meshIdx] = mesh->material_.specular;
-    data_.materialMirror_[meshIdx] = mesh->material_.mirror;
-    data_.materialShininess_[meshIdx] = mesh->material_.shininess;
-    data_.materialShadowable_[meshIdx] = mesh->material_.shadowable;
+    data_->materialAmbient_[meshIdx] = mesh->material_.ambient;
+    data_->materialDiffuse_[meshIdx] = mesh->material_.diffuse;
+    data_->materialSpecular_[meshIdx] = mesh->material_.specular;
+    data_->materialMirror_[meshIdx] = mesh->material_.mirror;
+    data_->materialShininess_[meshIdx] = mesh->material_.shininess;
+    data_->materialShadowable_[meshIdx] = mesh->material_.shadowable;
 
     // base increment
     vbase = vbase + vertexCount;
@@ -264,11 +260,11 @@ void Raytracer::pre_read_scene(const std::string &filename)
   freeData();
 
   /// Pre-read variables reset
-  data_.tMeshCount_ = 0;
-  data_.tVertexCount_ = 0;
-  data_.tVertexIdxCount_ = 0;
-  data_.tTextCoordCount_ = 0;
-  data_.tTextIdxCount_ = 0;
+  data_->tMeshCount_ = 0;
+  data_->tVertexCount_ = 0;
+  data_->tVertexIdxCount_ = 0;
+  data_->tTextCoordCount_ = 0;
+  data_->tTextIdxCount_ = 0;
 
   std::ifstream ifs(filename);
   if (!ifs) {
@@ -294,7 +290,7 @@ void Raytracer::pre_read_scene(const std::string &filename)
 
       // per read object will be pre-read variables are updated
       pre_read_obj(fn.c_str());
-      data_.tMeshCount_++;
+      data_->tMeshCount_++;
     } else {
       continue;
     }
@@ -322,35 +318,35 @@ void Raytracer::freeVariables() {
 
 void Raytracer::freeData(){
   auto F = [&](auto*& p){ if (p) { cudaFree(p); p = nullptr; } };
-  F(data_.vertexPos_);
-  F(data_.vertexNormals_);
-  F(data_.vertexIdx_);
-  F(data_.textureIdx_);
-  F(data_.textureCoordinatesU_);
-  F(data_.textureCoordinatesV_);
-  F(data_.firstVertex_);
-  F(data_.vertexCount_);
-  F(data_.firstVertexIdx_);
-  F(data_.vertexIdxCount_);
-  F(data_.firstTextCoord_);
-  F(data_.textCoordCount_);
-  F(data_.firstTextIdx_);
-  F(data_.textIdxCount_);
-  F(data_.normals_);
-  F(data_.vertexMeshId_);
-  F(data_.meshTexWidth_);
-  F(data_.meshTexHeight_);
-  F(data_.meshTexels_);
-  F(data_.meshTexWidth_);
-  F(data_.meshTexHeight_);
-  F(data_.meshTexOffset_);
-  F(data_.materialAmbient_);
-  F(data_.materialDiffuse_);
-  F(data_.materialSpecular_);
-  F(data_.materialMirror_);
-  F(data_.materialShininess_);
-  F(data_.materialShadowable_);
-
+  F(data_->vertexPos_);
+  F(data_->vertexNormals_);
+  F(data_->vertexIdx_);
+  F(data_->textureIdx_);
+  F(data_->textureCoordinatesU_);
+  F(data_->textureCoordinatesV_);
+  F(data_->firstVertex_);
+  F(data_->vertexCount_);
+  F(data_->firstVertexIdx_);
+  F(data_->vertexIdxCount_);
+  F(data_->firstTextCoord_);
+  F(data_->textCoordCount_);
+  F(data_->firstTextIdx_);
+  F(data_->textIdxCount_);
+  F(data_->normals_);
+  F(data_->vertexMeshId_);
+  F(data_->meshTexWidth_);
+  F(data_->meshTexHeight_);
+  F(data_->meshTexels_);
+  F(data_->meshTexWidth_);
+  F(data_->meshTexHeight_);
+  F(data_->meshTexOffset_);
+  F(data_->materialAmbient_);
+  F(data_->materialDiffuse_);
+  F(data_->materialSpecular_);
+  F(data_->materialMirror_);
+  F(data_->materialShininess_);
+  F(data_->materialShadowable_);
+  F(data_);
 }
 
 Raytracer::~Raytracer(){
@@ -427,16 +423,16 @@ void Raytracer::pre_read_obj(const char* _filename)
       continue;
     }
   }
-  data_.tVertexCount_ = data_.tVertexCount_ + vertexCount;
-  data_.tVertexIdxCount_ = data_.tVertexIdxCount_ + vertexIdxCount;
-  data_.tTextCoordCount_ = data_.tTextCoordCount_ + textCoordCount;
-  data_.tTextIdxCount_ = data_.tTextIdxCount_ + textIdxCount;
+  data_->tVertexCount_ = data_->tVertexCount_ + vertexCount;
+  data_->tVertexIdxCount_ = data_->tVertexIdxCount_ + vertexIdxCount;
+  data_->tTextCoordCount_ = data_->tTextCoordCount_ + textCoordCount;
+  data_->tTextIdxCount_ = data_->tTextIdxCount_ + textIdxCount;
 
   std::cout << "\n  pre-read " << _filename << ": "
-            << data_.tVertexCount_ << " vertices, "
-            << data_.tVertexIdxCount_/3 << " triangles, "
-            << data_.tTextCoordCount_ << " textCoordCount, "
-            << data_.tTextIdxCount_ << " textIdxCount"
+            << data_->tVertexCount_ << " vertices, "
+            << data_->tVertexIdxCount_/3 << " triangles, "
+            << data_->tTextCoordCount_ << " textCoordCount, "
+            << data_->tTextIdxCount_ << " textIdxCount"
             << std::flush;
 }
 

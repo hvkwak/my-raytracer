@@ -29,6 +29,15 @@ class BVH {
 
 public:
 
+  // BVHNode attributes in SoA
+  struct BVHNodes_SoA {
+    vec4 *bb_min_ = nullptr;
+    vec4 *bb_max_ = nullptr;
+    int *leftChildIdx_ = nullptr;
+    int *firstTriIdx_ = nullptr;
+    int *triCount_ = nullptr;
+  };
+
   BVH() = default;
   ~BVH();
 
@@ -93,15 +102,8 @@ public:
   //                       vec4 &intersection_normal,
   //                       double &intersection_distance) const;
 
-  // BVHNode attributes in SoA
-  struct BVHNodes_SoA {
-    vec4* bb_min_ = nullptr;
-    vec4* bb_max_ = nullptr;
-    int* leftChildIdx_ = nullptr;
-    int* firstTriIdx_ = nullptr;
-    int* triCount_ = nullptr;
-  };
-  BVHNodes_SoA bvhNodesSoA_;
+  BVHNodes_SoA * d_bvhNodesSoA_ = nullptr;
+  int d_bvhNodesSize = 0;
 
 private:
 

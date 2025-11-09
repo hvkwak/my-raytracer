@@ -1,5 +1,5 @@
 // ============================================================================
-// Computer Graphics - TU Dortmund
+// Computer Graphics(Graphische Datenverarbeitung) - TU Dortmund
 // Implementation by Hyovin Kwak (Instructor: Prof. Dr. Mario Botsch)
 //
 // This file contains my solutions to the course exercises.
@@ -12,13 +12,14 @@
 #include <ctime>
 #include <cfloat>
 // #include "Raytracer.h"
-// #include "utils/Material.h"
+#include "utils/Material.h"
 // #include "utils/Object.h"
 #include "utils/vec4.h"
 #include "utils/Camera.h"
 #include "utils/Ray.h"
 #include "mytracer_gpu.h"
 #include "mydata.h"
+#include "mybvh.h"
 
 //=============================================================================
 // Kernel
@@ -34,7 +35,8 @@ __global__ void compute_image_device(vec4 *pixels,
                                      const vec4 background,
                                      const vec4 ambience,
                                      const int max_depth,
-                                     const Data data) {
+                                     const Data *data,
+                                     const BVH::BVHNodes_SoA *bvhNodes) {
   // Calculate pixel coordinates
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -48,7 +50,15 @@ __global__ void compute_image_device(vec4 *pixels,
   Ray ray = camera.primary_ray(x, y);
 
   // Trace ray and get color
-  vec4 color = trace_device(ray, background, ambience, max_depth, 0, data);
+  vec4 color = trace_device(ray,
+                            background,
+                            ambience,
+                            max_depth,
+                            lightsPos,
+                            lightsColor,
+                            nLights,
+                            data,
+                            bvhNodes);
 
   // // Store result
   int pixelIdx = y * width + x;
@@ -66,44 +76,235 @@ __device__ vec4 trace_device(const Ray &ray,
                              const vec4 &background,
                              const vec4 &ambience,
                              const int &max_depth,
-                             const int &depth,
-                             const Data & data){
+                             const vec4* lightsPos,
+                             const vec4* lightsColor,
+                             const int nLights,
+                             const Data *data,
+                             const BVH::BVHNodes_SoA *bvhNodes){
 
-    if (depth > max_depth){
-        return {0, 0, 0};
+  vec4 color(0.0, 0.0, 0.0);
+  if (max_depth < 1) {
+    return color;
+  }
+
+  // Intersection results
+  Material material;
+  vec4 intersection_point;
+  vec4 intersection_normal;
+  double intersection_distance;
+
+  if (!intersect_scene_device(ray,
+                              data,
+                              bvhNodes,
+                              material,
+                              intersection_point,
+                              intersection_normal,
+                              intersection_distance))
+  {
+    return background;
+  }
+
+  color += (1.0 - material.mirror) * lighting_device(intersection_point,
+                                                     intersection_normal,
+                                                     -ray.direction_,
+                                                     material,
+                                                     data,
+                                                     bvhNodes,
+                                                     background,
+                                                     ambience,
+                                                     lightsPos,
+                                                     lightsColor,
+                                                     nLights);
+
+  int i = 1;
+  const double epsilon = 1e-4;
+  while (i < max_depth) {
+    if (material.mirror > 0.0) {
+      vec4 v = reflect(ray.direction_, intersection_normal);
+      Ray reflected_ray = Ray(intersection_point + epsilon * v, v);
+      //
+      // TODO: intersect_scene takes place here + early stopping
+      //
+      color += material.mirror * ((1.0 - material.mirror) * lighting_device(intersection_point,
+                                                                            intersection_normal,
+                                                                            -ray.direction_,
+                                                                            material,
+                                                                            data,
+                                                                            bvhNodes,
+                                                                            background,
+                                                                            ambience,
+                                                                            lightsPos,
+                                                                            lightsColor,
+                                                                            nLights));
     }
-    if (!intersect_scene_device()){
-        return background;
+    i++;
+  }
+  return color;
+}
+
+__device__ bool intersect_scene_device(const Ray & ray,
+                                       const Data *data,
+                                       const BVH::BVHNodes_SoA *bvhNodes,
+                                       Material &material,
+                                       vec4 &intersection_point,
+                                       vec4 &intersection_normal,
+                                       double &intersection_distance)
+{
+  double tmin(DBL_MAX);
+
+  if (intersectBVH_device(ray, data, bvhNodes, material, intersection_point, intersection_normal, tmin)) {
+    intersection_distance = tmin;
+    return true;
+  }
+  return false;
+}
+
+__device__ bool intersectBVH_device(const Ray &ray,
+                                    const Data *data,
+                                    const BVH::BVHNodes_SoA *bvhNodes,
+                                    Material &material,
+                                    vec4 &intersection_point,
+                                    vec4 &intersection_normal,
+                                    double &intersection_distance) {
+
+  const int rootNodeIdx = 0;
+  int stack[64];
+  int stackPtr = 0;
+
+  stack[stackPtr++] = rootNodeIdx;
+  bool hit = false;
+
+  while (stackPtr > 0){
+
+    // Pop node from stack
+    int nodeIdx = stack[--stackPtr];
+
+    // Cache node data once
+    vec4 bb_min = bvhNodes->bb_min_[nodeIdx];
+    vec4 bb_max = bvhNodes->bb_max_[nodeIdx];
+    int triCount = bvhNodes->triCount_[nodeIdx];
+    int firstTriIdx = bvhNodes->firstTriIdx_[nodeIdx];
+    int leftChildIdx = bvhNodes->leftChildIdx_[nodeIdx];
+    // const BVHNode& node = bvhNodes[nodeIdx];
+    double dummy;
+
+    // Early exit if ray doesn't intersect node's bounding box
+    // if (!intersectAABB(ray, node.bb_min_, node.bb_max_, dummy)) {
+    if (!intersectAABB(ray, bb_min, bb_max, dummy)) {
+      continue;
     }
 
+    if (triCount > 0) {
+      // Leaf node - test all triangles (SoA data layout)
+      double t;
+      vec4 p, n, d;
+      for (int i = firstTriIdx; i < firstTriIdx + triCount; i++) {
+        // Fetch vertex indices
+        int vi0 = data->vertexIdx_[i * 3];
+        int vi1 = data->vertexIdx_[i * 3 + 1];
+        int vi2 = data->vertexIdx_[i * 3 + 2];
 
+        // Fetch vertex positions and normals
+        vec4 vp0 = data->vertexPos_[vi0];
+        vec4 vp1 = data->vertexPos_[vi1];
+        vec4 vp2 = data->vertexPos_[vi2];
+        vec4 normal = data->normals_[i];
+        vec4 vn0 = data->vertexNormals_[vi0];
+        vec4 vn1 = data->vertexNormals_[vi1];
+        vec4 vn2 = data->vertexNormals_[vi2];
+
+        Mesh *mesh = data->meshes_[vi0];
+        int meshId = data->vertexMeshId_[vi0]; // TODO: use this!
+
+
+        // Fetch texture coordinates if available
+        double u0 = 0, u1 = 0, u2 = 0;
+        double v0 = 0, v1 = 0, v2 = 0;
+        if (mesh->hasTexture_) {
+          int iuv0 = data->textureIdx_[i * 3];
+          int iuv1 = data->textureIdx_[i * 3 + 1];
+          int iuv2 = data->textureIdx_[i * 3 + 2];
+          u0 = data->textureCoordinatesU_[iuv0];
+          u1 = data->textureCoordinatesU_[iuv1];
+          u2 = data->textureCoordinatesU_[iuv2];
+          v0 = data->textureCoordinatesV_[iuv0];
+          v1 = data->textureCoordinatesV_[iuv1];
+          v2 = data->textureCoordinatesV_[iuv2];
+        }
+
+        // Intersect triangle
+        if (mesh->intersect_triangle_SoA(vp0, vp1, vp2, normal, vn0, vn1, vn2,
+                                         u0, u1, u2, v0, v1, v2, ray, p, n, d,
+                                         t)) {
+          if (t < intersection_distance) {
+            material = mesh->material_;
+            material.diffuse = d;
+            intersection_point = p;
+            intersection_normal = n;
+            intersection_distance = t;
+            hit = true;
+          }
+        }
+      }
+    } else {
+      double tminLeft, tminRight;
+
+      // Cache node data once
+      // vec4 bb_min_left = d_bvhNodesSoA_->bb_min_[leftChildIdx];
+      // vec4 bb_max_left = d_bvhNodesSoA_->bb_max_[leftChildIdx];
+      // bool hitLeft = intersectAABB(ray, bb_min_left, bb_max_left, tminLeft);
+      bool hitLeft = intersectAABB(ray, bvhNodes_[node.leftChildIdx_].bb_min_, bvhNodes_[node.leftChildIdx_].bb_max_, tminLeft);
+
+      // vec4 bb_min_right = d_bvhNodesSoA_->bb_min_[leftChildIdx+1];
+      // vec4 bb_max_right = d_bvhNodesSoA_->bb_max_[leftChildIdx+1];
+      // bool hitRight = intersectAABB(ray, bb_min_right, bb_max_right, tminRight);
+      bool hitRight = intersectAABB(ray, bvhNodes_[node.leftChildIdx_+1].bb_min_, bvhNodes_[node.leftChildIdx_+1].bb_max_, tminRight);
+
+      if (hitLeft && hitRight){
+        if (tminLeft < tminRight){
+          // Internal node - push children to stack: no recursion
+          stack[stackPtr++] = node.leftChildIdx_ + 1; // right child
+          stack[stackPtr++] = node.leftChildIdx_; // left child will be visited first.
+        }else{
+          stack[stackPtr++] = node.leftChildIdx_; // right child visited first
+          stack[stackPtr++] = node.leftChildIdx_+1; // left child
+        }
+      } else if (hitLeft) {
+        stack[stackPtr++] = node.leftChildIdx_; // left child will be visited first.
+      } else if (hitRight) {
+        stack[stackPtr++] = node.leftChildIdx_+1; // left child will be visited first.
+      }
+
+
+    }
+  }
+  return hit;
 }
 
 
-// /**
-//  * @brief GPU version: Compute diffuse lighting term
-//  */
-// __device__ double diffuse_device(const vec4 &point, const vec4 &normal, const Light &light) {
-//     vec4 ray_from_point_to_light = normalize(light.position - point);
-//     double cosTheta = dot(normal, ray_from_point_to_light);
-//     cosTheta = fmax(0.0, cosTheta);
-//     return cosTheta;
-// }
+/**
+ * @brief GPU version: Compute diffuse lighting term
+ */
+__device__ double diffuse_device(const vec4 &point, const vec4 &normal, const vec4 &lightPos) {
+    vec4 ray_from_point_to_light = normalize(lightPos - point);
+    double cosTheta = dot(normal, ray_from_point_to_light);
+    cosTheta = fmax(0.0, cosTheta);
+    return cosTheta;
+}
 
-// /**
-//  * @brief GPU version: Compute specular reflection term
-//  */
-// __device__ double reflection_device(const vec4 &point, const vec4 &normal,
-//                                      const vec4 &view, const Light &light) {
-//     if (diffuse_device(point, normal, light) > 0.0) {
-//         vec4 ray_from_point_to_light = normalize(light.position - point);
-//         vec4 ray_reflected = normalize(mirror(ray_from_point_to_light, normal));
-//         double cosTheta = dot(ray_reflected, view);
-//         cosTheta = fmax(0.0, cosTheta);
-//         return cosTheta;
-//     }
-//     return 0.0;
-// }
+/**
+ * @brief GPU version: Compute specular reflection term
+ */
+__device__ double reflection_device(const vec4 &point, const vec4 &normal, const vec4 &view, const vec4 &lightPos) {
+    if (diffuse_device(point, normal, lightPos) > 0.0) {
+        vec4 ray_from_point_to_light = normalize(lightPos - point);
+        vec4 ray_reflected = normalize(mirror(ray_from_point_to_light, normal));
+        double cosTheta = dot(ray_reflected, view);
+        cosTheta = fmax(0.0, cosTheta);
+        return cosTheta;
+    }
+    return 0.0;
+}
 
 // /**
 //  * @brief GPU version: Find intersection with scene
@@ -119,63 +320,83 @@ __device__ vec4 trace_device(const Ray &ray,
 //     return (tmin < DBL_MAX);
 // }
 
-// /**
-//  * @brief GPU version: Compute Phong lighting
-//  */
-// __device__ vec4 lighting_device(const vec4 &point,
-//                                 const vec4 &normal,
-//                                 const vec4 &view,
-//                                 const Material &material,
-//                                 const Light *lights,
-//                                 int numLights,
-//                                 const Data &data) {
-//     const double epsilon = 1e-4;
-//     vec4 color(0.0, 0.0, 0.0);
 
-//     // Ambient component
-//     color[0] += material.ambient[0];
-//     color[1] += material.ambient[1];
-//     color[2] += material.ambient[2];
 
-//     // Process each light source
-//     for (int i = 0; i < numLights; i++) {
-//         const Light &light = lights[i];
+/**
+ * @brief Compute Phong lighting model (ambient + diffuse + specular)
+ *
+ * Computes local illumination at a surface point using the Phong shading model
+ *
+ * @param point Intersection point
+ * @param normal Surface normal at intersection
+ * @param view Direction from intersection point to viewer
+ * @param material Material properties
+ * @return Total color contribution from all light sources
+ */
+__device__ vec4 lighting_device(const vec4 &point,
+                                const vec4 &normal,
+                                const vec4 &view,
+                                const Material &material,
+                                const Data *data,
+                                const BVH::BVHNodes_SoA *bvhNodes,
+                                const vec4 &background,
+                                const vec4 &ambience,
+                                const vec4* lightsPos,
+                                const vec4* lightsColor,
+                                const int nLights)
+{
+  const double epsilon = 1e-4;  // Offset to avoid self-intersection
+  vec4 color(0.0, 0.0, 0.0);
 
-//         // Compute diffuse and specular components
-//         double diffuse_ = diffuse_device(point, normal, light);
-//         double dot_rv = reflection_device(point, normal, view, light);
-//         double reflection_ = dot_rv;
+  // Ambient component (approximates global illumination)
+  color[0] += ambience[0] * material.ambient[0];
+  color[1] += ambience[1] * material.ambient[1];
+  color[2] += ambience[2] * material.ambient[2];
 
-//         // Compute specular exponent
-//         for (double j = 0.0; j < material.shininess - 1; j += 1.0) {
-//             reflection_ *= dot_rv;
-//         }
+  // Process each light source
+  for (int k = 0; k < nLights; k++) {
+    vec4 light_position = lightsPos[k];
+    vec4 light_color = lightsColor[k];
+    // Compute diffuse and specular components
+    double diffuse_ = diffuse_device(point, normal, light_position);
+    double dot_rv = reflection_device(point, normal, view, light_position);
+    double reflection_ = dot_rv;
+    // Compute specular exponent
+    double i = 0.0;
+    while (i < material.shininess - 1){
+      reflection_ *= dot_rv;
+      i += 1.0;
+    }
 
-//         // Shadow calculation
-//         bool isShadow = false;
-//         if (material.shadowable) {
-//             Material shadow_material;
-//             vec4 shadow_point;
-//             vec4 shadow_normal;
-//             double shadow_t;
-//             vec4 light_direction = normalize(light.position - point);
-//             double light_distance = norm(light.position - point);
-//             Ray shadow_ray = Ray(point + epsilon * light_direction, light_direction);
-//             bool isIntersect = intersect_scene_device(shadow_ray, shadow_material,
-//                                                       shadow_point, shadow_normal,
-//                                                       shadow_t, data);
-//             isShadow = isIntersect && shadow_t < light_distance && 0.0 < shadow_t;
-//         }
+    // Shadow calculation
+    bool isShadow = false;
+    if (material.shadowable){
+      Material shadow_material;
+      vec4 shadow_point;
+      vec4 shadow_normal;
+      double shadow_t;
+      vec4 light_direction = normalize(light_position - point);
+      double light_distance = norm(light_position - point);
+      Ray shadow_ray = Ray(point + epsilon * light_direction, light_direction);
+      bool isIntersect = intersect_scene_device(shadow_ray,
+                                                data,
+                                                bvhNodes,
+                                                shadow_material,
+                                                shadow_point,
+                                                shadow_normal,
+                                                shadow_t);
+      isShadow = isIntersect && shadow_t < light_distance && 0.0 < shadow_t;
+    }
 
-//         // Accumulate light contribution
-//         double shadow_factor = isShadow ? 0.0 : 1.0;
-//         color[0] += light.color[0] * shadow_factor * (material.diffuse[0] * diffuse_ + material.specular[0] * reflection_);
-//         color[1] += light.color[1] * shadow_factor * (material.diffuse[1] * diffuse_ + material.specular[1] * reflection_);
-//         color[2] += light.color[2] * shadow_factor * (material.diffuse[2] * diffuse_ + material.specular[2] * reflection_);
-//     }
+    // Accumulate light contribution if not in shadow
+    color[0] += light_color[0] * !isShadow * (material.diffuse[0] * diffuse_ + material.specular[0] * reflection_);
+    color[1] += light_color[1] * !isShadow * (material.diffuse[1] * diffuse_ + material.specular[1] * reflection_);
+    color[2] += light_color[2] * !isShadow * (material.diffuse[2] * diffuse_ + material.specular[2] * reflection_);
+  }
+  return color;
+}
 
-//     return color;
-// }
+
 
 // /**
 //  * @brief GPU version: Handle recursive ray tracing for reflections
