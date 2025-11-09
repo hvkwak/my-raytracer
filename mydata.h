@@ -62,19 +62,26 @@ struct Data {
   double *textureCoordinatesU_ = nullptr; ///< U texture coordinates
   double *textureCoordinatesV_ = nullptr; ///< V texture coordinates
 
-  // Per-mesh metadata (all [meshCount]):
+
+  // ===== Per-mesh metadata begins here (all [meshCount]) =====
   int* firstVertex_ = nullptr;     int* vertexCount_ = nullptr;
   int* firstVertexIdx_ = nullptr;  int* vertexIdxCount_ = nullptr;
   int* firstTextCoord_ = nullptr;  int* textCoordCount_ = nullptr;
   int* firstTextIdx_ = nullptr;    int* textIdxCount_ = nullptr;
 
-  /// Texture
-  // per-mesh texture info (one allocation per mesh for texels)
+  // per-mesh Texture (one allocation per mesh for texels)
+  vec4 *meshTexels_ = nullptr;  // [tMeshCount_] of pointers to [W*H] UM blocks
   int *meshTexWidth_ = nullptr;  // [tMeshCount_]
   int *meshTexHeight_ = nullptr; // [tMeshCount_]
-  vec4 *meshTexels_ = nullptr;  // [tMeshCount_] of pointers to [W*H] UM blocks
   size_t* meshTexOffset_= nullptr;   // [tMeshCount_], start index into texels_ for each mesh
 
+  // per-mesh Material (all tMeshCount_)
+  vec4* materialAmbient_ = nullptr;
+  vec4* materialDiffuse_ = nullptr;
+  vec4* materialSpecular_ = nullptr;
+  double* materialShininess_ = nullptr;
+  double* materialMirror_ = nullptr;
+  bool* materialShadowable_ = nullptr;
 };
 
 #endif // MYDATA_H

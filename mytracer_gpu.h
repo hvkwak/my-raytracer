@@ -9,22 +9,30 @@
 #ifndef MYTRACER_GPU_H
 #define MYTRACER_GPU_H
 
-#include "utils/Light.h"
 #include "utils/Camera.h"
 #include "utils/vec4.h"
-#include "utils/Ray.h"
 #include "mydata.h"
 #include <cuda_runtime.h>
 
-__global__ void traceOnGPU(vec4* pixels,
-                           int width,
-                           int height,
-                           Camera camera,
-                           Light* lights,
-                           int numLights,
-                           Data data,
-                           vec4 background,
-                           vec4 ambience,
-                           int max_depth);
+__global__ void compute_image_device(vec4* pixels,
+                                     const int width,
+                                     const int height,
+                                     const Camera camera,
+                                     const vec4 *lightsPos,
+                                     const vec4 *lightsColor,
+                                     const int nLights,
+                                     const vec4 background,
+                                     const vec4 ambience,
+                                     const int max_depth,
+                                     const Data data);
+
+__device__ vec4 trace_device(const Ray &ray,
+                             const vec4 &background,
+                             const vec4 &ambience,
+                             const int &max_depth,
+                             const int depth,
+                             const Data & data);
+
+__device__ bool intersect_scene_device();
 
 #endif // MYTRACER_GPU_H

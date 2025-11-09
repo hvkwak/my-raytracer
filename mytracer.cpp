@@ -28,14 +28,14 @@ void Raytracer::init_cuda(const std::string &filename){
   // pre read scene, read scene, build SoA, and build BVH
   pre_read_scene(filename);
   read_scene(filename);
-  buildSoA();
+  build_Data();
   bvh.initSoA(meshes_, &data_);
-  initDevice();
-  allocateToDevice();
+  init_device();
+  prepareDeviceResources();
 }
 
 
-void Raytracer::initDevice(void){
+void Raytracer::init_device(void){
   // Initialize CUDA device
   int dev = 0;
   cudaDeviceProp deviceProp;
@@ -58,23 +58,40 @@ void Raytracer::allocate(size_t new_bytes, size_t &old_bytes, void* &ptr){
   }
 }
 
-void Raytracer::allocateToDevice() {
+void Raytracer::prepareDeviceResources() {
+
   // allocate nPixels
   size_t nPixels = static_cast<size_t>(camera_.width_) * camera_.height_;
   size_t pixels_bytes   = nPixels * sizeof(vec4);
-  // CHECK(cudaMalloc((&d_pixels_), pixels_bytes));
-  // CHECK(cudaMemset(d_pixels_, 0, pixels_bytes));
   allocate(pixels_bytes, d_pixels_bytes_, reinterpret_cast<void*&>(d_pixels_)); // TODO
 
   // allocate Lights
   size_t nLights = lights_.size();
   size_t lights_bytes = nLights * sizeof(Light);
-  allocate(lights_bytes, d_lights_bytes_, reinterpret_cast<void*&>(d_lights_));
-  // CHECK(cudaMemcpy(d_A, h_A, nBytes, cudaMemcpyHostToDevice)); TODO: lights to array!
+  allocate(lights_bytes, d_lights_bytes_, reinterpret_cast<void*&>(d_lightsPosition_));
+  allocate(lights_bytes, d_lights_bytes_, reinterpret_cast<void*&>(d_lightsColor_));
+  copyLights();
 
+  // CHECK(cudaMemcpy(d_A, h_A, nBytes, cudaMemcpyHostToDevice)); TODO: lights to array!
+}
+
+void Raytracer::copyLights(){
+  int nLights = lights_.size();
+  size_t nBytes = nLights * sizeof(vec4);
+  vec4* lightPos = (vec4*)malloc(nBytes);
+  vec4* lightColor = (vec4*)malloc(nBytes);
+  for (int i = 0; i < nLights; i++){
+    lightPos[i] = lights_[i].position;
+    lightColor[i] = lights_[i].color;
+  }
+  CHECK(cudaMemcpy(d_lightsPosition_, lightPos, nBytes, cudaMemcpyHostToDevice));
+  CHECK(cudaMemcpy(d_lightsColor_, lightColor, nBytes, cudaMemcpyHostToDevice));
+  free(lightPos);
+  free(lightColor);
 }
 
 void Raytracer::compute_image_cuda(){
+
   std::cout << "Raytracer::compute_image_cuda()..." ;
 
   // allocate memory by resizing image
@@ -87,6 +104,8 @@ void Raytracer::compute_image_cuda(){
   int nThreads = 32;
   dim3 block (nThreads, nThreads);
   dim3 grid ((nPixels+block.x-1)/block.x, (nPixels+block.y-1)/block.y);
+
+  // compute_image_device<<<grid, block>>>
 
   // traceOnGPU<<<grid, block>>>(dPixels, camera_.width_, camera_.height_, camera_, dLights, numLights, data_,
   //                             getBackground(),
@@ -111,9 +130,9 @@ void Raytracer::compute_image_cuda(){
  *
  * Transforms mesh data from AoS to SoA format for GPU-friendly memory access
  */
-void Raytracer::buildSoA(){
+void Raytracer::build_Data(){
 
-  std::cout << "buildSoA...";
+  std::cout << "build Data...";
 
   /// SoA memory allocation: Unified Memory!
   // per-vertex / indices / per-tri
@@ -148,6 +167,13 @@ void Raytracer::buildSoA(){
   CHECK(cudaMallocManaged(&data_.meshTexHeight_,     (size_t)data_.tMeshCount_ * sizeof(int)));
   CHECK(cudaMallocManaged(&data_.meshTexOffset_,     (size_t)data_.tMeshCount_ * sizeof(size_t)));
 
+  // Material per Mesh
+  CHECK(cudaMallocManaged(&data_.materialAmbient_,    data_.tMeshCount_ * sizeof(vec4)));
+  CHECK(cudaMallocManaged(&data_.materialDiffuse_,    data_.tMeshCount_ * sizeof(vec4)));
+  CHECK(cudaMallocManaged(&data_.materialSpecular_,   data_.tMeshCount_ * sizeof(vec4)));
+  CHECK(cudaMallocManaged(&data_.materialMirror_,     data_.tMeshCount_ * sizeof(double)));
+  CHECK(cudaMallocManaged(&data_.materialShininess_,  data_.tMeshCount_ * sizeof(double)));
+  CHECK(cudaMallocManaged(&data_.materialShadowable_, data_.tMeshCount_ * sizeof(bool)));
 
   /// Data copy per Mesh
   int meshIdx = 0;
@@ -211,6 +237,14 @@ void Raytracer::buildSoA(){
       data_.meshTexOffset_[meshIdx] = size_t(-1);
     }
 
+    // add Material
+    data_.materialAmbient_[meshIdx] = mesh->material_.ambient;
+    data_.materialDiffuse_[meshIdx] = mesh->material_.diffuse;
+    data_.materialSpecular_[meshIdx] = mesh->material_.specular;
+    data_.materialMirror_[meshIdx] = mesh->material_.mirror;
+    data_.materialShininess_[meshIdx] = mesh->material_.shininess;
+    data_.materialShadowable_[meshIdx] = mesh->material_.shadowable;
+
     // base increment
     vbase = vbase + vertexCount;
     ibase = ibase + count*3;
@@ -227,7 +261,7 @@ void Raytracer::buildSoA(){
 void Raytracer::pre_read_scene(const std::string &filename)
 {
   // Data(concat Vectors) clean up
-  dataFree();
+  freeData();
 
   /// Pre-read variables reset
   data_.tMeshCount_ = 0;
@@ -268,19 +302,25 @@ void Raytracer::pre_read_scene(const std::string &filename)
   ifs.close();
 }
 
-void Raytracer::freeDevice() {
+void Raytracer::freeVariables() {
   if (d_pixels_) {
     CHECK(cudaFree(d_pixels_));
     d_pixels_ = nullptr;
     d_pixels_bytes_ = 0;
   }
-  if (d_lights_) {
-    CHECK(cudaFree(d_lights_));
-    d_lights_ = nullptr;
+  if (d_lightsPosition_) {
+    CHECK(cudaFree(d_lightsPosition_));
+    d_lightsPosition_ = nullptr;
+    d_lights_bytes_ = 0;
+  }
+  if (d_lightsColor_) {
+    CHECK(cudaFree(d_lightsColor_));
+    d_lightsColor_ = nullptr;
     d_lights_bytes_ = 0;
   }
 }
-void Raytracer::dataFree(){
+
+void Raytracer::freeData(){
   auto F = [&](auto*& p){ if (p) { cudaFree(p); p = nullptr; } };
   F(data_.vertexPos_);
   F(data_.vertexNormals_);
@@ -304,11 +344,18 @@ void Raytracer::dataFree(){
   F(data_.meshTexWidth_);
   F(data_.meshTexHeight_);
   F(data_.meshTexOffset_);
+  F(data_.materialAmbient_);
+  F(data_.materialDiffuse_);
+  F(data_.materialSpecular_);
+  F(data_.materialMirror_);
+  F(data_.materialShininess_);
+  F(data_.materialShadowable_);
+
 }
 
 Raytracer::~Raytracer(){
-  dataFree();
-  freeDevice();
+  freeVariables();
+  freeData();
 }
 
 /**
