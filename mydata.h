@@ -14,22 +14,6 @@
 #include <vector>
 #include <cuda_runtime.h>
 
-
-/* struct stMesh { */
-
-/*   bool hasTexture = false; */
-/*   unsigned width = 0, height = 0; */
-/*   vec4* pixelsTexture = nullptr; */
-
-/*   inline size_t idx(unsigned x, unsigned y) const { */
-/*     const unsigned s = width; */
-/*     return size_t (y) * s + x; */
-/*   } */
-/*   inline vec4&       texel(unsigned x, unsigned y)       { return pixelsTexture[idx(x,y)]; } */
-/*   inline const vec4& texel(unsigned x, unsigned y) const { return pixelsTexture[idx(x,y)]; } */
-/* }; */
-
-
 /**
  * @brief Structure-of-Arrays (SoA) data layout for GPU-friendly memory access
  *
@@ -44,7 +28,7 @@ struct Data {
 
   /// ===== total coounts from pre-read-scene =====
   int tMeshCount_ = 0, tVertexCount_ = 0, tVertexIdxCount_ = 0, tTextCoordCount_ = 0, tTextIdxCount_ = 0;
-  size_t tTotalTexels_ = 0;
+  size_t tTexelCount_ = 0;
 
   // ===== Per-vertex data (vbase) =====
   int*  vertexMeshId_ = nullptr;        ///< per-vertex: which mesh this vertex belongs to
@@ -73,7 +57,10 @@ struct Data {
   vec4 *meshTexels_ = nullptr;  // [tMeshCount_] of pointers to [W*H] UM blocks
   int *meshTexWidth_ = nullptr;  // [tMeshCount_]
   int *meshTexHeight_ = nullptr; // [tMeshCount_]
-  size_t* meshTexOffset_= nullptr;   // [tMeshCount_], start index into texels_ for each mesh
+  size_t* firstMeshTex_= nullptr;   // [tMeshCount_], start index into texels_ for each mesh
+
+  // draw mode: shading
+  int *meshDrawMode_ = nullptr;
 
   // per-mesh Material (all tMeshCount_)
   vec4* materialAmbient_ = nullptr;

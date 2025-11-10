@@ -151,7 +151,7 @@ bool BVH::intersectAABB(const Ray & ray, const vec4 & bb_min_, const vec4 & bb_m
   if ((tmin > tzmax) || (tzmin > tmax))
     return false;
 
-  tmin = std::max(tmin, tzmin);
+  // tmin = std::max(tmin, tzmin);
   tmax = std::min(tmax, tzmax);
 
   // for left, right child check

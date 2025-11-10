@@ -55,6 +55,29 @@ __device__ bool intersectBVH_device(const Ray &ray,
                                     vec4 &intersection_normal,
                                     double &intersection_distance);
 
+__device__ bool intersect_triangle_device(const vec4& p0,
+                                          const vec4& p1,
+                                          const vec4& p2,
+                                          const vec4& n,
+                                          const vec4& vn0,
+                                          const vec4& vn1,
+                                          const vec4& vn2,
+                                          const double& u0,
+                                          const double& u1,
+                                          const double& u2,
+                                          const double& v0,
+                                          const double& v1,
+                                          const double& v2,
+                                          const Ray &ray,
+                                          vec4 &intersection_point,
+                                          vec4 &intersection_normal,
+                                          vec4 &intersection_diffuse,
+                                          double &intersection_distance,
+                                          const int & meshId,
+                                          const Data *data);
+
+__device__ bool intersectAABB(const Ray & ray, const vec4 & bb_min_, const vec4 & bb_max_, double & tmin_);
+
 __device__ vec4 lighting_device(const vec4 &point,
                                 const vec4 &normal,
                                 const vec4 &view,
@@ -66,6 +89,8 @@ __device__ vec4 lighting_device(const vec4 &point,
                                 const vec4* lightsPos,
                                 const vec4* lightsColor,
                                 const int nLights);
+
+
 
 __device__ double diffuse_device(const vec4 &point, const vec4 &normal, const vec4 &lightPos);
 __device__ double reflection_device(const vec4 &point, const vec4 &normal, const vec4 &view, const vec4 &lightPos);

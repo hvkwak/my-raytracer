@@ -11,15 +11,16 @@
 #include <stdio.h>
 #include <ctime>
 #include <cfloat>
-// #include "Raytracer.h"
+#include <algorithm>
+
 #include "utils/Material.h"
-// #include "utils/Object.h"
 #include "utils/vec4.h"
 #include "utils/Camera.h"
 #include "utils/Ray.h"
 #include "mytracer_gpu.h"
 #include "mydata.h"
 #include "mybvh.h"
+#include "myutils.h"
 
 //=============================================================================
 // Kernel
@@ -80,19 +81,19 @@ __device__ vec4 trace_device(const Ray &ray,
                              const vec4* lightsColor,
                              const int nLights,
                              const Data *data,
-                             const BVH::BVHNodes_SoA *bvhNodes){
-
+                             const BVH::BVHNodes_SoA *bvhNodes)
+{
+  // check if max_depth is correct: has to be minimum 2
   vec4 color(0.0, 0.0, 0.0);
   if (max_depth < 1) {
     return color;
   }
 
-  // Intersection results
+  // Initial Intersection
   Material material;
   vec4 intersection_point;
   vec4 intersection_normal;
   double intersection_distance;
-
   if (!intersect_scene_device(ray,
                               data,
                               bvhNodes,
@@ -103,7 +104,6 @@ __device__ vec4 trace_device(const Ray &ray,
   {
     return background;
   }
-
   color += (1.0 - material.mirror) * lighting_device(intersection_point,
                                                      intersection_normal,
                                                      -ray.direction_,
@@ -117,26 +117,37 @@ __device__ vec4 trace_device(const Ray &ray,
                                                      nLights);
 
   int i = 1;
+  double accumulated_weight = material.mirror;
   const double epsilon = 1e-4;
-  while (i < max_depth) {
-    if (material.mirror > 0.0) {
-      vec4 v = reflect(ray.direction_, intersection_normal);
-      Ray reflected_ray = Ray(intersection_point + epsilon * v, v);
-      //
-      // TODO: intersect_scene takes place here + early stopping
-      //
-      color += material.mirror * ((1.0 - material.mirror) * lighting_device(intersection_point,
-                                                                            intersection_normal,
-                                                                            -ray.direction_,
-                                                                            material,
-                                                                            data,
-                                                                            bvhNodes,
-                                                                            background,
-                                                                            ambience,
-                                                                            lightsPos,
-                                                                            lightsColor,
-                                                                            nLights));
+  vec4 v = reflect(ray.direction_, intersection_normal);
+  while (i < max_depth && accumulated_weight > 0.0) {
+    Ray reflected_ray = Ray(intersection_point + epsilon * v, v);
+    // see if reflected ray intersects scene
+    if (!intersect_scene_device(reflected_ray,
+                                data,
+                                bvhNodes,
+                                material,
+                                intersection_point,
+                                intersection_normal,
+                                intersection_distance))
+    {
+      color += accumulated_weight * background;
+      break;
     }
+    // update color. new intersection variables
+    color += accumulated_weight * ((1.0 - material.mirror) * lighting_device(intersection_point,
+                                                                             intersection_normal,
+                                                                             -reflected_ray.direction_,
+                                                                             material,
+                                                                             data,
+                                                                             bvhNodes,
+                                                                             background,
+                                                                             ambience,
+                                                                             lightsPos,
+                                                                             lightsColor,
+                                                                             nLights));
+    v = reflect(reflected_ray.direction_, intersection_normal);
+    accumulated_weight *= material.mirror;
     i++;
   }
   return color;
@@ -154,9 +165,8 @@ __device__ bool intersect_scene_device(const Ray & ray,
 
   if (intersectBVH_device(ray, data, bvhNodes, material, intersection_point, intersection_normal, tmin)) {
     intersection_distance = tmin;
-    return true;
   }
-  return false;
+  return (tmin < DBL_MAX);
 }
 
 __device__ bool intersectBVH_device(const Ray &ray,
@@ -167,11 +177,10 @@ __device__ bool intersectBVH_device(const Ray &ray,
                                     vec4 &intersection_normal,
                                     double &intersection_distance) {
 
-  const int rootNodeIdx = 0;
   int stack[64];
   int stackPtr = 0;
 
-  stack[stackPtr++] = rootNodeIdx;
+  stack[stackPtr++] = 0; // root nodeIdx is 0.
   bool hit = false;
 
   while (stackPtr > 0){
@@ -195,6 +204,7 @@ __device__ bool intersectBVH_device(const Ray &ray,
     }
 
     if (triCount > 0) {
+      // printf("triCount: %d \n", triCount); // probably one triangle?
       // Leaf node - test all triangles (SoA data layout)
       double t;
       vec4 p, n, d;
@@ -203,6 +213,7 @@ __device__ bool intersectBVH_device(const Ray &ray,
         int vi0 = data->vertexIdx_[i * 3];
         int vi1 = data->vertexIdx_[i * 3 + 1];
         int vi2 = data->vertexIdx_[i * 3 + 2];
+        int meshId = data->vertexMeshId_[vi0]; // TODO: use this!
 
         // Fetch vertex positions and normals
         vec4 vp0 = data->vertexPos_[vi0];
@@ -213,14 +224,10 @@ __device__ bool intersectBVH_device(const Ray &ray,
         vec4 vn1 = data->vertexNormals_[vi1];
         vec4 vn2 = data->vertexNormals_[vi2];
 
-        Mesh *mesh = data->meshes_[vi0];
-        int meshId = data->vertexMeshId_[vi0]; // TODO: use this!
-
-
         // Fetch texture coordinates if available
         double u0 = 0, u1 = 0, u2 = 0;
         double v0 = 0, v1 = 0, v2 = 0;
-        if (mesh->hasTexture_) {
+        if (data->meshTexWidth_[meshId] != -1) { // hasTexture True
           int iuv0 = data->textureIdx_[i * 3];
           int iuv1 = data->textureIdx_[i * 3 + 1];
           int iuv2 = data->textureIdx_[i * 3 + 2];
@@ -233,12 +240,21 @@ __device__ bool intersectBVH_device(const Ray &ray,
         }
 
         // Intersect triangle
-        if (mesh->intersect_triangle_SoA(vp0, vp1, vp2, normal, vn0, vn1, vn2,
-                                         u0, u1, u2, v0, v1, v2, ray, p, n, d,
-                                         t)) {
+        if (intersect_triangle_device(vp0, vp1, vp2,
+                                      normal,
+                                      vn0, vn1, vn2,
+                                      u0, u1, u2,
+                                      v0, v1, v2,
+                                      ray,
+                                      p, n, d, t, meshId, data))
+        {
           if (t < intersection_distance) {
-            material = mesh->material_;
-            material.diffuse = d;
+            material.ambient = data->materialAmbient_[meshId];
+            material.mirror = data->materialMirror_[meshId];
+            material.shadowable = data->materialShadowable_[meshId];
+            material.diffuse = d; // d is correct, because it can be from texture.
+            material.specular = data->materialSpecular_[meshId];
+            material.shininess = data->materialShininess_[meshId];
             intersection_point = p;
             intersection_normal = n;
             intersection_distance = t;
@@ -250,29 +266,29 @@ __device__ bool intersectBVH_device(const Ray &ray,
       double tminLeft, tminRight;
 
       // Cache node data once
-      // vec4 bb_min_left = d_bvhNodesSoA_->bb_min_[leftChildIdx];
-      // vec4 bb_max_left = d_bvhNodesSoA_->bb_max_[leftChildIdx];
-      // bool hitLeft = intersectAABB(ray, bb_min_left, bb_max_left, tminLeft);
-      bool hitLeft = intersectAABB(ray, bvhNodes_[node.leftChildIdx_].bb_min_, bvhNodes_[node.leftChildIdx_].bb_max_, tminLeft);
+      vec4 bb_min_left = bvhNodes->bb_min_[leftChildIdx];
+      vec4 bb_max_left = bvhNodes->bb_max_[leftChildIdx];
+      bool hitLeft = intersectAABB(ray, bb_min_left, bb_max_left, tminLeft);
+      // bool hitLeft = intersectAABB(ray, bvhNodes_[node.leftChildIdx_].bb_min_, bvhNodes_[node.leftChildIdx_].bb_max_, tminLeft);
 
-      // vec4 bb_min_right = d_bvhNodesSoA_->bb_min_[leftChildIdx+1];
-      // vec4 bb_max_right = d_bvhNodesSoA_->bb_max_[leftChildIdx+1];
-      // bool hitRight = intersectAABB(ray, bb_min_right, bb_max_right, tminRight);
-      bool hitRight = intersectAABB(ray, bvhNodes_[node.leftChildIdx_+1].bb_min_, bvhNodes_[node.leftChildIdx_+1].bb_max_, tminRight);
+      vec4 bb_min_right = bvhNodes->bb_min_[leftChildIdx+1];
+      vec4 bb_max_right = bvhNodes->bb_max_[leftChildIdx+1];
+      bool hitRight = intersectAABB(ray, bb_min_right, bb_max_right, tminRight);
+      // bool hitRight = intersectAABB(ray, bvhNodes_[node.leftChildIdx_+1].bb_min_, bvhNodes_[node.leftChildIdx_+1].bb_max_, tminRight);
 
       if (hitLeft && hitRight){
         if (tminLeft < tminRight){
           // Internal node - push children to stack: no recursion
-          stack[stackPtr++] = node.leftChildIdx_ + 1; // right child
-          stack[stackPtr++] = node.leftChildIdx_; // left child will be visited first.
+          stack[stackPtr++] = leftChildIdx + 1; // right child
+          stack[stackPtr++] = leftChildIdx; // left child will be visited first.
         }else{
-          stack[stackPtr++] = node.leftChildIdx_; // right child visited first
-          stack[stackPtr++] = node.leftChildIdx_+1; // left child
+          stack[stackPtr++] = leftChildIdx; // right child visited first
+          stack[stackPtr++] = leftChildIdx+1; // left child
         }
       } else if (hitLeft) {
-        stack[stackPtr++] = node.leftChildIdx_; // left child will be visited first.
+        stack[stackPtr++] = leftChildIdx; // left child will be visited first.
       } else if (hitRight) {
-        stack[stackPtr++] = node.leftChildIdx_+1; // left child will be visited first.
+        stack[stackPtr++] = leftChildIdx+1; // left child will be visited first.
       }
 
 
@@ -283,42 +299,156 @@ __device__ bool intersectBVH_device(const Ray &ray,
 
 
 /**
- * @brief GPU version: Compute diffuse lighting term
+ * @brief Test ray-triangle intersection (SoA version)
+ *
+ * All triangle data is passed as parameters rather than stored in a Triangle struct
+ * This version is optimized for GPU-friendly memory layouts
+ *
+ * @param p0,p1,p2 Triangle vertex positions
+ * @param n Face normal
+ * @param vn0,vn1,vn2 Vertex normals
+ * @param u0,u1,u2,v0,v1,v2 Texture coordinates
+ * @param ray Ray to test
+ * @param intersection_point Intersection point (output)
+ * @param intersection_normal Normal at intersection (output)
+ * @param intersection_diffuse Diffuse color at intersection (output)
+ * @param intersection_distance Distance to intersection (output)
+ * @return true if ray intersects the triangle
  */
-__device__ double diffuse_device(const vec4 &point, const vec4 &normal, const vec4 &lightPos) {
-    vec4 ray_from_point_to_light = normalize(lightPos - point);
-    double cosTheta = dot(normal, ray_from_point_to_light);
-    cosTheta = fmax(0.0, cosTheta);
-    return cosTheta;
+__device__ bool intersect_triangle_device(const vec4& p0,
+                                          const vec4& p1,
+                                          const vec4& p2,
+                                          const vec4& n,
+                                          const vec4& vn0,
+                                          const vec4& vn1,
+                                          const vec4& vn2,
+                                          const double& u0,
+                                          const double& u1,
+                                          const double& u2,
+                                          const double& v0,
+                                          const double& v1,
+                                          const double& v2,
+                                          const Ray &ray,
+                                          vec4 &intersection_point,
+                                          vec4 &intersection_normal,
+                                          vec4 &intersection_diffuse,
+                                          double &intersection_distance,
+                                          const int & meshId,
+                                          const Data * data)
+{
+  intersection_diffuse = data->materialDiffuse_[meshId];
+
+  // Solve for barycentric coordinates and ray parameter t
+  // Same algorithm as AoS version
+  // TODO: division with zero due to S?
+  const vec4 column1 = {p0[0] - p2[0], p0[1] - p2[1], p0[2] - p2[2]};
+  const vec4 column2 = {p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]};
+  const vec4 column3 = {-ray.direction_[0], -ray.direction_[1], -ray.direction_[2]};
+  const vec4 column4 = {ray.origin_[0] - p2[0], ray.origin_[1] - p2[1], ray.origin_[2] - p2[2]};
+  const double S = det4D(column1, column2, column3);
+  const double alpha = det4D(column4, column2, column3) / S;
+  const double beta = det4D(column1, column4, column3) / S;
+  const double gamma = (1.0 - alpha - beta);
+  const double eps_shadow_acne = 1e-5;
+
+  // check if t is correct: positive && beyond shadow acne
+  const double t = det4D(column1, column2, column4) / S;
+  if (t <= eps_shadow_acne)
+    return false;
+
+  // check if it's inside
+  bool isInside = true; // shadow acne guard
+  isInside = isInside && 0.0 <= alpha && alpha <= 1.0;
+  isInside = isInside && 0.0 <= beta && beta <= 1.0;
+  isInside = isInside && 0.0 <= gamma && gamma <= 1.0;
+  if (!isInside)
+    return false;
+
+  // save intersection parameters
+  intersection_distance = t;
+  intersection_point = ray(t);
+
+  // Apply texture if available
+  if (data->meshTexWidth_[meshId] != -1){
+    // Interpolate texture coordinates with barycentric weights
+    double u = alpha * u0 + beta * u1 + gamma * u2;
+    double v = alpha * v0 + beta * v1 + gamma * v2;
+
+    // Clamp to [0,1] range
+    u = fmin(fmax(u, 0.0), 1.0);
+    v = fmin(fmax(v, 0.0), 1.0);
+
+    // Map to texture pixel coordinates
+    const unsigned int W = data->meshTexWidth_[meshId];
+    const unsigned int H = data->meshTexHeight_[meshId];
+    int px = (int)round(u * (W - 1));
+    int py = (int)round((1.0 - v) * (H - 1));
+    size_t meshTexOffset = data->firstMeshTex_[meshId];
+    vec4 texture = data->meshTexels_[meshTexOffset + py * size_t(W) + px]; // texture at (px, py)
+    intersection_diffuse = texture;
+  }
+
+  // Compute normal (flat or interpolated)
+  if (data->meshDrawMode_[meshId] == 0) {
+    // FLAT
+    // intersection_normal = normalize(cross(p1 - p0, p2 - p0));
+    intersection_normal = n;
+  } else if(data->meshDrawMode_[meshId] == 1) {
+    // Phong shading
+    intersection_normal = alpha * vn0 + beta * vn1 + gamma * vn2;
+  }
+  return true;
 }
 
-/**
- * @brief GPU version: Compute specular reflection term
- */
-__device__ double reflection_device(const vec4 &point, const vec4 &normal, const vec4 &view, const vec4 &lightPos) {
-    if (diffuse_device(point, normal, lightPos) > 0.0) {
-        vec4 ray_from_point_to_light = normalize(lightPos - point);
-        vec4 ray_reflected = normalize(mirror(ray_from_point_to_light, normal));
-        double cosTheta = dot(ray_reflected, view);
-        cosTheta = fmax(0.0, cosTheta);
-        return cosTheta;
-    }
-    return 0.0;
+__device__ bool intersectAABB(const Ray & ray, const vec4 & bb_min_, const vec4 & bb_max_, double & tmin_){
+
+  // TODO: division with zero due to ray.direction_?
+
+  // Slab method for ray-AABB intersection
+  double tmin = (bb_min_[0] - ray.origin_[0]) / ray.direction_[0];
+  double tmax = (bb_max_[0] - ray.origin_[0]) / ray.direction_[0];
+
+  if (tmin > tmax) {
+    double temp = tmin;
+    tmin = tmax;
+    tmax = temp;
+  }
+
+  double tymin = (bb_min_[1] - ray.origin_[1]) / ray.direction_[1];
+  double tymax = (bb_max_[1] - ray.origin_[1]) / ray.direction_[1];
+
+  if (tymin > tymax) {
+    double temp = tymin;
+    tymin = tymax;
+    tymax = temp;
+  }
+
+  if ((tmin > tymax) || (tymin > tmax))
+    return false;
+
+  tmin = fmax(tmin, tymin);
+  tmax = fmin(tmax, tymax);
+
+  double tzmin = (bb_min_[2] - ray.origin_[2]) / ray.direction_[2];
+  double tzmax = (bb_max_[2] - ray.origin_[2]) / ray.direction_[2];
+
+  if (tzmin > tzmax) {
+    double temp = tzmin;
+    tzmin = tzmax;
+    tzmax = temp;
+  }
+
+  if ((tmin > tzmax) || (tzmin > tmax))
+    return false;
+
+  tmin = fmax(tmin, tzmin);
+  tmax = fmin(tmax, tzmax);
+
+  // TODO: tmin_ may be useful for left, right child check
+  tmin_ = tmin;
+
+  return tmax > 1e-5;  // Cull if farther than current closest hit
 }
-
-// /**
-//  * @brief GPU version: Find intersection with scene
-//  */
-// __device__ bool intersect_scene_device(const Ray &ray, Material &intersection_material,
-//                                         vec4 &intersection_point, vec4 &intersection_normal,
-//                                         double &intersection_distance, const Data &data) {
-//     double tmin = DBL_MAX;
-
-//     // TODO: Implement BVH intersection for GPU
-//     // For now, this is a placeholder - you'll need to implement BVH traversal
-
-//     return (tmin < DBL_MAX);
-// }
 
 
 
@@ -396,6 +526,30 @@ __device__ vec4 lighting_device(const vec4 &point,
   return color;
 }
 
+/**
+ * @brief GPU version: Compute diffuse lighting term
+ */
+__device__ double diffuse_device(const vec4 &point, const vec4 &normal, const vec4 &lightPos) {
+    vec4 ray_from_point_to_light = normalize(lightPos - point);
+    double cosTheta = dot(normal, ray_from_point_to_light);
+    cosTheta = fmax(0.0, cosTheta);
+    return cosTheta;
+}
+
+/**
+ * @brief GPU version: Compute specular reflection term
+ */
+__device__ double reflection_device(const vec4 &point, const vec4 &normal, const vec4 &view, const vec4 &lightPos) {
+    if (diffuse_device(point, normal, lightPos) > 0.0) {
+        vec4 ray_from_point_to_light = normalize(lightPos - point);
+        vec4 ray_reflected = normalize(mirror(ray_from_point_to_light, normal));
+        double cosTheta = dot(ray_reflected, view);
+        cosTheta = fmax(0.0, cosTheta);
+        return cosTheta;
+    }
+    return 0.0;
+}
+
 
 
 // /**
@@ -413,36 +567,5 @@ __device__ vec4 lighting_device(const vec4 &point,
 //                                                data, background, ambience, max_depth);
 //     }
 //     return vec4(0.0, 0.0, 0.0);
-// }
-
-// /**
-//  * @brief GPU version: Main ray tracing function
-//  */
-// __device__ vec4 trace_device(const Ray &ray, int depth, const Light *lights, int numLights,
-//                              const Data &data, const vec4 &background, const vec4 &ambience,
-//                              int max_depth) {
-//     // Stop if recursion depth is too large
-//     if (depth > max_depth) {
-//         return vec4(0.0, 0.0, 0.0);
-//     }
-
-//     // Find intersection
-//     Material material;
-//     vec4 point;
-//     vec4 normal;
-//     double t;
-//     if (!intersect_scene_device(ray, material, point, normal, t, data)) {
-//         return background;
-//     }
-
-//     // Compute local Phong lighting
-//     vec4 color = (1.0 - material.mirror) * lighting_device(point, normal, -ray.direction_,
-//                                                              material, lights, numLights, data);
-
-//     // Compute global lighting (reflections)
-//     color += subtrace_device(ray, material, point, normal, depth, lights, numLights,
-//                             data, background, ambience, max_depth);
-
-//     return color;
 // }
 

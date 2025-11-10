@@ -71,7 +71,7 @@ bool Mesh::intersect_bounding_box(const Ray &ray) const {
 void Mesh::compute_texture(int iuv0,
                            int iuv1,
                            int iuv2,
-                           vec3& intersection_diffuse,
+                           vec4& intersection_diffuse,
                            const double & alpha,
                            const double & beta,
                            const double & gamma) const
@@ -106,28 +106,28 @@ void Mesh::compute_normals() {
 
   // Initialize vertex normals to zero
   for (Vertex &v : vertices_) {
-    v.normal = vec3(0, 0, 0);
+    v.normal = vec4(0, 0, 0);
   }
 
   // Compute triangle face normals
   for (Triangle &t : triangles_) {
-    const vec3 &p0 = vertices_[t.i0].position;
-    const vec3 &p1 = vertices_[t.i1].position;
-    const vec3 &p2 = vertices_[t.i2].position;
+    const vec4 &p0 = vertices_[t.i0].position;
+    const vec4 &p1 = vertices_[t.i1].position;
+    const vec4 &p2 = vertices_[t.i2].position;
     t.normal = normalize(cross(p1 - p0, p2 - p0));
   }
 
   // Compute vertex normals with angle-weighted averaging
   for (Triangle &t : triangles_) {
     // Vertex positions
-    const vec3 &p0 = vertices_[t.i0].position;
-    const vec3 &p1 = vertices_[t.i1].position;
-    const vec3 &p2 = vertices_[t.i2].position;
+    const vec4 &p0 = vertices_[t.i0].position;
+    const vec4 &p1 = vertices_[t.i1].position;
+    const vec4 &p2 = vertices_[t.i2].position;
 
     // vectors
-    const vec3 v0 = p1 - p0;
-    const vec3 v1 = p2 - p1;
-    const vec3 v2 = p0 - p2;
+    const vec4 v0 = p1 - p0;
+    const vec4 v1 = p2 - p1;
+    const vec4 v2 = p0 - p2;
 
     // vector lengths
     const double length0 = norm(v0);
@@ -176,30 +176,30 @@ void Mesh::compute_normals() {
  */
 bool Mesh::intersect_triangle(const Triangle &triangle,
                               const Ray &ray,
-                              vec3 &intersection_point,
-                              vec3 &intersection_normal,
-                              vec3 &intersection_diffuse,
+                              vec4 &intersection_point,
+                              vec4 &intersection_normal,
+                              vec4 &intersection_diffuse,
                               double &intersection_distance) const {
   intersection_diffuse = material_.diffuse;
-  const vec3 &p0 = vertices_[triangle.i0].position;
-  const vec3 &p1 = vertices_[triangle.i1].position;
-  const vec3 &p2 = vertices_[triangle.i2].position;
+  const vec4 &p0 = vertices_[triangle.i0].position;
+  const vec4 &p1 = vertices_[triangle.i1].position;
+  const vec4 &p2 = vertices_[triangle.i2].position;
 
   // Solve for barycentric coordinates and ray parameter t
   // Equation: ray.origin + t*ray.dir = alpha*p0 + beta*p1 + gamma*p2
   // where gamma = 1 - alpha - beta
-  const vec3 column1 = {p0[0] - p2[0], p0[1] - p2[1], p0[2] - p2[2]};
-  const vec3 column2 = {p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]};
-  const vec3 column3 = {-ray.direction_[0], -ray.direction_[1], -ray.direction_[2]};
-  const vec3 column4 = {ray.origin_[0] - p2[0], ray.origin_[1] - p2[1], ray.origin_[2] - p2[2]};
-  const double S = det3D(column1, column2, column3);
-  const double alpha = det3D(column4, column2, column3) / S;
-  const double beta = det3D(column1, column4, column3) / S;
+  const vec4 column1 = {p0[0] - p2[0], p0[1] - p2[1], p0[2] - p2[2]};
+  const vec4 column2 = {p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]};
+  const vec4 column3 = {-ray.direction_[0], -ray.direction_[1], -ray.direction_[2]};
+  const vec4 column4 = {ray.origin_[0] - p2[0], ray.origin_[1] - p2[1], ray.origin_[2] - p2[2]};
+  const double S = det4D(column1, column2, column3);
+  const double alpha = det4D(column4, column2, column3) / S;
+  const double beta = det4D(column1, column4, column3) / S;
   const double gamma = (1.0 - alpha - beta);
   const double eps_shadow_acne = 1e-5;
 
   // Check if intersection is in front of ray (avoid shadow acne)
-  const double t = det3D(column1, column2, column4) / S;
+  const double t = det4D(column1, column2, column4) / S;
   if (t <= eps_shadow_acne)
     return false;
 
@@ -227,101 +227,6 @@ bool Mesh::intersect_triangle(const Triangle &triangle,
     intersection_normal = alpha * vertices_[triangle.i0].normal +
                           beta * vertices_[triangle.i1].normal +
                           gamma * vertices_[triangle.i2].normal;
-  }
-  return true;
-}
-
-/**
- * @brief Test ray-triangle intersection (SoA version)
- *
- * All triangle data is passed as parameters rather than stored in a Triangle struct
- * This version is optimized for GPU-friendly memory layouts
- *
- * @param p0,p1,p2 Triangle vertex positions
- * @param n Face normal
- * @param vn0,vn1,vn2 Vertex normals
- * @param u0,u1,u2,v0,v1,v2 Texture coordinates
- * @param ray Ray to test
- * @param intersection_point Intersection point (output)
- * @param intersection_normal Normal at intersection (output)
- * @param intersection_diffuse Diffuse color at intersection (output)
- * @param intersection_distance Distance to intersection (output)
- * @return true if ray intersects the triangle
- */
-bool Mesh::intersect_triangle_SoA(const vec3& p0,
-                                  const vec3& p1,
-                                  const vec3& p2,
-                                  const vec3& n,
-                                  const vec3& vn0,
-                                  const vec3& vn1,
-                                  const vec3& vn2,
-                                  const double& u0,
-                                  const double& u1,
-                                  const double& u2,
-                                  const double& v0,
-                                  const double& v1,
-                                  const double& v2,
-                                  const Ray &ray,
-                                  vec3 &intersection_point,
-                                  vec3 &intersection_normal,
-                                  vec3 &intersection_diffuse,
-                                  double &intersection_distance) const
-{
-  intersection_diffuse = material_.diffuse;
-
-  // Solve for barycentric coordinates and ray parameter t
-  // Same algorithm as AoS version
-  const vec3 column1 = {p0[0] - p2[0], p0[1] - p2[1], p0[2] - p2[2]};
-  const vec3 column2 = {p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]};
-  const vec3 column3 = {-ray.direction_[0], -ray.direction_[1], -ray.direction_[2]};
-  const vec3 column4 = {ray.origin_[0] - p2[0], ray.origin_[1] - p2[1], ray.origin_[2] - p2[2]};
-  const double S = det3D(column1, column2, column3);
-  const double alpha = det3D(column4, column2, column3) / S;
-  const double beta = det3D(column1, column4, column3) / S;
-  const double gamma = (1.0 - alpha - beta);
-  const double eps_shadow_acne = 1e-5;
-
-  // check if t is correct: positive && beyond shadow acne
-  const double t = det3D(column1, column2, column4) / S;
-  if (t <= eps_shadow_acne)
-    return false;
-
-  // check if it's inside
-  bool isInside = true; // shadow acne guard
-  isInside = isInside && 0.0 <= alpha && alpha <= 1.0;
-  isInside = isInside && 0.0 <= beta && beta <= 1.0;
-  isInside = isInside && 0.0 <= gamma && gamma <= 1.0;
-  if (!isInside)
-    return false;
-
-  // save intersection parameters
-  intersection_distance = t;
-  intersection_point = ray(t);
-
-  // Apply texture if available
-  if (hasTexture_){
-    // Interpolate texture coordinates with barycentric weights
-    double u = alpha * u0 + beta * u1 + gamma * u2;
-    double v = alpha * v0 + beta * v1 + gamma * v2;
-
-    // Clamp to [0,1] range
-    u = std::clamp(u, 0.0, 1.0);
-    v = std::clamp(v, 0.0, 1.0);
-
-    // Map to texture pixel coordinates
-    const unsigned int W = texture_.width();
-    const unsigned int H = texture_.height();
-    int px = std::round(u * (W - 1));
-    int py = std::round((1.0 - v) * (H - 1));
-
-    intersection_diffuse = texture_(px, py);
-  }
-
-  // Compute normal (flat or interpolated)
-  if (draw_mode_ == FLAT) {
-    intersection_normal = normalize(cross(p1 - p0, p2 - p0));
-  } else {
-    intersection_normal = alpha * vn0 + beta * vn1 + gamma * vn2;
   }
   return true;
 }

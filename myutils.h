@@ -9,6 +9,15 @@
 #pragma once
 
 #include "utils/vec3.h"
+#include "utils/vec4.h"
+
+// Make this header usable with and without NVCC
+#ifndef __CUDACC__
+  #define CUDA_HD
+#else
+  #include <cuda_runtime.h>
+  #define CUDA_HD __host__ __device__
+#endif
 
 /**
  * @brief Compute determinant of a 2x2 matrix
@@ -18,7 +27,7 @@
  * @param d Element at (1,1)
  * @return Determinant value
  */
-double det2D(const double &a, const double & b, const double & c, const double & d);
+CUDA_HD double det2D(const double &a, const double & b, const double & c, const double & d);
 
 /**
  * @brief Compute determinant of a 3x3 matrix
@@ -27,4 +36,5 @@ double det2D(const double &a, const double & b, const double & c, const double &
  * @param v3 Third column vector
  * @return Determinant value
  */
-double det3D(const vec3 & v1, const vec3 & v2, const vec3 & v3);
+CUDA_HD double det3D(const vec3 & v1, const vec3 & v2, const vec3 & v3);
+CUDA_HD double det4D(const vec4 & v1, const vec4 & v2, const vec4 & v3);

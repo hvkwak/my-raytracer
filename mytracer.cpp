@@ -67,8 +67,8 @@ void Raytracer::prepareDeviceResources() {
   // allocate Lights
   size_t nLights = lights_.size();
   size_t lights_bytes = nLights * sizeof(Light);
-  allocate(lights_bytes, d_lights_bytes_, reinterpret_cast<void*&>(d_lightsPosition_));
-  allocate(lights_bytes, d_lights_bytes_, reinterpret_cast<void*&>(d_lightsColor_));
+  allocate(lights_bytes, d_lightsPos_bytes_, reinterpret_cast<void*&>(d_lightsPosition_));
+  allocate(lights_bytes, d_lightsColor_bytes_, reinterpret_cast<void*&>(d_lightsColor_));
   copyLights(); // from std::vector
   // CHECK(cudaMemcpy(d_A, h_A, nBytes, cudaMemcpyHostToDevice)); TODO: lights to array!
 }
@@ -98,10 +98,10 @@ void Raytracer::compute_image_cuda(){
   tmpimage.resize(camera_.width_, camera_.height_);
 
   // invoke kernel at host side
-  size_t nPixels = static_cast<size_t>(camera_.width_) * camera_.height_;
-  int nThreads = 32;
+  // size_t nPixels = static_cast<size_t>(camera_.width_) * camera_.height_;
+  int nThreads = 16;
   dim3 block (nThreads, nThreads);
-  dim3 grid ((nPixels+block.x-1)/block.x, (nPixels+block.y-1)/block.y);
+  dim3 grid ((camera_.width_+block.x-1)/block.x, (camera_.height_+block.y-1)/block.y);
 
   // TODO: compute_image_device<<<grid, block>>>
 
@@ -128,48 +128,54 @@ void Raytracer::build_Data(){
 
   std::cout << "build Data...";
 
+  // Data(concat Vectors) clean up
+  freeData();
+
+  int vertexCount = data_->tVertexCount_;
+  int vertexIdxCount = data_->tVertexIdxCount_;
+  int textIdxCount = data_->tTextIdxCount_;
+  int textCoordCount = data_->tTextCoordCount_;
+  int meshCount = data_->tMeshCount_;
+  size_t texelCount = data_->tTexelCount_;
+
   /// SoA memory allocation: Unified Memory!
   // per-vertex / indices / per-tri
-
-  CHECK(cudaMallocManaged(&data_,                                             sizeof(Data)));
-  CHECK(cudaMallocManaged(&data_->vertexPos_,         data_->tVertexCount_    * sizeof(vec4)));
-  CHECK(cudaMallocManaged(&data_->vertexNormals_,     data_->tVertexCount_    * sizeof(vec4)));
-  CHECK(cudaMallocManaged(&data_->vertexIdx_,         data_->tVertexIdxCount_ * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_->textureIdx_,        data_->tTextIdxCount_   * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_->textureCoordinatesU_, data_->tTextCoordCount_ * sizeof(double)));
-  CHECK(cudaMallocManaged(&data_->textureCoordinatesV_, data_->tTextCoordCount_ * sizeof(double)));
-  CHECK(cudaMallocManaged(&data_->normals_,           (data_->tVertexIdxCount_/3) * sizeof(vec4)));
+  CHECK(cudaMallocManaged(&data_->vertexPos_,              vertexCount    * sizeof(vec4)));
+  CHECK(cudaMallocManaged(&data_->vertexNormals_,          vertexCount    * sizeof(vec4)));
+  CHECK(cudaMallocManaged(&data_->vertexIdx_,              vertexIdxCount * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->textureIdx_,             textIdxCount   * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->textureCoordinatesU_,    textCoordCount * sizeof(double)));
+  CHECK(cudaMallocManaged(&data_->textureCoordinatesV_,    textCoordCount * sizeof(double)));
+  CHECK(cudaMallocManaged(&data_->normals_,            (vertexIdxCount/3) * sizeof(vec4)));
 
   // per-vertex mesh ownership (ID instead of stMesh)
-  CHECK(cudaMallocManaged(&data_->vertexMeshId_,      data_->tVertexCount_    * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->vertexMeshId_,           vertexCount    * sizeof(int)));
 
   // per-mesh metadata
-  CHECK(cudaMallocManaged(&data_->firstVertex_,       data_->tMeshCount_ * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_->vertexCount_,       data_->tMeshCount_ * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_->firstVertexIdx_,    data_->tMeshCount_ * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_->vertexIdxCount_,    data_->tMeshCount_ * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_->firstTextCoord_,    data_->tMeshCount_ * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_->textCoordCount_,    data_->tMeshCount_ * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_->firstTextIdx_,      data_->tMeshCount_ * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_->textIdxCount_,      data_->tMeshCount_ * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->firstVertex_,       meshCount * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->vertexCount_,       meshCount * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->firstVertexIdx_,    meshCount * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->vertexIdxCount_,    meshCount * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->firstTextCoord_,    meshCount * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->textCoordCount_,    meshCount * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->firstTextIdx_,      meshCount * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->textIdxCount_,      meshCount * sizeof(int)));
 
   // per-mesh texture tables
   /// count total texels
-  for (Mesh* m : meshes_){
-    data_->tTotalTexels_ += size_t(m->texture_.width()) * m->texture_.height();
-  }
-  CHECK(cudaMallocManaged(&data_->meshTexels_,        data_->tTotalTexels_ * sizeof(vec4)));
-  CHECK(cudaMallocManaged(&data_->meshTexWidth_,      (size_t)data_->tMeshCount_ * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_->meshTexHeight_,     (size_t)data_->tMeshCount_ * sizeof(int)));
-  CHECK(cudaMallocManaged(&data_->meshTexOffset_,     (size_t)data_->tMeshCount_ * sizeof(size_t)));
+  CHECK(cudaMallocManaged(&data_->meshTexels_,        texelCount * sizeof(vec4)));
+  CHECK(cudaMallocManaged(&data_->meshTexWidth_,      (size_t)meshCount * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->meshTexHeight_,     (size_t)meshCount * sizeof(int)));
+  CHECK(cudaMallocManaged(&data_->firstMeshTex_,     (size_t)meshCount * sizeof(size_t)));
+  CHECK(cudaMallocManaged(&data_->meshDrawMode_,     (int)meshCount * sizeof(int)));
 
   // Material per Mesh
-  CHECK(cudaMallocManaged(&data_->materialAmbient_,    data_->tMeshCount_ * sizeof(vec4)));
-  CHECK(cudaMallocManaged(&data_->materialDiffuse_,    data_->tMeshCount_ * sizeof(vec4)));
-  CHECK(cudaMallocManaged(&data_->materialSpecular_,   data_->tMeshCount_ * sizeof(vec4)));
-  CHECK(cudaMallocManaged(&data_->materialMirror_,     data_->tMeshCount_ * sizeof(double)));
-  CHECK(cudaMallocManaged(&data_->materialShininess_,  data_->tMeshCount_ * sizeof(double)));
-  CHECK(cudaMallocManaged(&data_->materialShadowable_, data_->tMeshCount_ * sizeof(bool)));
+  CHECK(cudaMallocManaged(&data_->materialAmbient_,    meshCount * sizeof(vec4)));
+  CHECK(cudaMallocManaged(&data_->materialDiffuse_,    meshCount * sizeof(vec4)));
+  CHECK(cudaMallocManaged(&data_->materialSpecular_,   meshCount * sizeof(vec4)));
+  CHECK(cudaMallocManaged(&data_->materialMirror_,     meshCount * sizeof(double)));
+  CHECK(cudaMallocManaged(&data_->materialShininess_,  meshCount * sizeof(double)));
+  CHECK(cudaMallocManaged(&data_->materialShadowable_, meshCount * sizeof(bool)));
 
   /// Data copy per Mesh
   int meshIdx = 0;
@@ -222,15 +228,18 @@ void Raytracer::build_Data(){
       const int H = mesh->texture_.height();
       data_->meshTexWidth_[meshIdx] = W;
       data_->meshTexHeight_[meshIdx] = H;
-      data_->meshTexOffset_[meshIdx] = meshTexOffset;
+      data_->firstMeshTex_[meshIdx] = meshTexOffset;
+      data_->meshDrawMode_[meshIdx] = mesh->draw_mode_;
       for (int y = 0; y < H; ++y)
         for (int x = 0; x < W; ++x)
           data_->meshTexels_[meshTexOffset + y * size_t(W) + x] = mesh->texture_(x, y);
       meshTexOffset += size_t(W) * H;
-    }else{
+
+    } else {
       data_->meshTexWidth_[meshIdx] = -1;
       data_->meshTexHeight_[meshIdx] = -1;
-      data_->meshTexOffset_[meshIdx] = size_t(-1);
+      data_->firstMeshTex_[meshIdx] = size_t(-1);
+      data_->meshDrawMode_[meshIdx] = -1;
     }
 
     // add Material
@@ -256,8 +265,9 @@ void Raytracer::build_Data(){
  */
 void Raytracer::pre_read_scene(const std::string &filename)
 {
-  // Data(concat Vectors) clean up
-  freeData();
+  if (!data_){
+    CHECK(cudaMallocManaged(&data_, sizeof(Data)));
+  }
 
   /// Pre-read variables reset
   data_->tMeshCount_ = 0;
@@ -265,6 +275,7 @@ void Raytracer::pre_read_scene(const std::string &filename)
   data_->tVertexIdxCount_ = 0;
   data_->tTextCoordCount_ = 0;
   data_->tTextIdxCount_ = 0;
+  data_->tTexelCount_ = 0;
 
   std::ifstream ifs(filename);
   if (!ifs) {
@@ -317,6 +328,7 @@ void Raytracer::freeVariables() {
 }
 
 void Raytracer::freeData(){
+  if (!data_) return;
   auto F = [&](auto*& p){ if (p) { cudaFree(p); p = nullptr; } };
   F(data_->vertexPos_);
   F(data_->vertexNormals_);
@@ -337,9 +349,8 @@ void Raytracer::freeData(){
   F(data_->meshTexWidth_);
   F(data_->meshTexHeight_);
   F(data_->meshTexels_);
-  F(data_->meshTexWidth_);
-  F(data_->meshTexHeight_);
-  F(data_->meshTexOffset_);
+  F(data_->firstMeshTex_);
+  F(data_->meshDrawMode_);
   F(data_->materialAmbient_);
   F(data_->materialDiffuse_);
   F(data_->materialSpecular_);
