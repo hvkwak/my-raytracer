@@ -29,18 +29,6 @@ void Raytracer::init_cuda(const std::string &filename){
   read_scene(filename);
   build_Data();
   bvh.initSoA(meshes_, data_);
-  init_device();
-  prepareDeviceResources();
-}
-
-
-void Raytracer::init_device(void){
-  // Initialize CUDA device
-  int dev = 0;
-  cudaDeviceProp deviceProp;
-  CHECK(cudaGetDeviceProperties(&deviceProp, dev));
-  printf("Using Device %d: %s\n", dev, deviceProp.name);
-  CHECK(cudaSetDevice(dev));
 }
 
 void Raytracer::allocate(size_t new_bytes, size_t &old_bytes, void* &ptr){
@@ -74,7 +62,7 @@ void Raytracer::prepareDeviceResources() {
 }
 
 void Raytracer::copyLights(){
-  int nLights = lights_.size();
+  nLights = lights_.size();
   size_t nBytes = nLights * sizeof(vec4);
   vec4* lightPos = (vec4*)malloc(nBytes);
   vec4* lightColor = (vec4*)malloc(nBytes);
@@ -92,31 +80,26 @@ void Raytracer::compute_image_cuda(){
 
   std::cout << "Raytracer::compute_image_cuda()..." ;
 
+  init_device();
+  prepareDeviceResources();
+
   // allocate memory by resizing image
   image_.resize(camera_.width_, camera_.height_);
-  Image tmpimage;
-  tmpimage.resize(camera_.width_, camera_.height_);
 
-  // invoke kernel at host side
-  // size_t nPixels = static_cast<size_t>(camera_.width_) * camera_.height_;
-  int nThreads = 16;
-  dim3 block (nThreads, nThreads);
-  dim3 grid ((camera_.width_+block.x-1)/block.x, (camera_.height_+block.y-1)/block.y);
-
-  // TODO: compute_image_device<<<grid, block>>>
-
-
-  // // synchronize GPU execution
-  // CHECK(cudaDeviceSynchronize());
-
-  // // copy result from device to host
-  // CHECK(cudaMemcpy(image_.data(), dPixels, nBytesPixels, cudaMemcpyDeviceToHost));
-
-  // // free device memory
-  // CHECK(cudaFree(dPixels));
-  // CHECK(cudaFree(dLights));init_cpu(filename);
-
-  // std::cout << " done." << std::endl;
+  // launch kernel invoke kernel at host
+  image_ = launch_compute_image_device(d_pixels_,
+                                      camera_.width_,
+                                      camera_.height_,
+                                      camera_,
+                                      d_lightsPosition_,
+                                      d_lightsColor_,
+                                      nLights,
+                                      background_,
+                                      ambience_,
+                                      max_depth_,
+                                      data_,
+                                      bvh.d_bvhNodesSoA_);
+  std::cout << " done." << std::endl;
 }
 
 /**
@@ -318,12 +301,12 @@ void Raytracer::freeVariables() {
   if (d_lightsPosition_) {
     CHECK(cudaFree(d_lightsPosition_));
     d_lightsPosition_ = nullptr;
-    d_lights_bytes_ = 0;
+    d_lightsPos_bytes_ = 0;
   }
   if (d_lightsColor_) {
     CHECK(cudaFree(d_lightsColor_));
     d_lightsColor_ = nullptr;
-    d_lights_bytes_ = 0;
+    d_lightsColor_bytes_ = 0;
   }
 }
 

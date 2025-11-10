@@ -9,13 +9,31 @@
 #ifndef MYTRACER_GPU_H
 #define MYTRACER_GPU_H
 
+#include <vector>
 #include "utils/Camera.h"
 #include "utils/vec4.h"
 #include "utils/Material.h"
+#include "utils/Image.h"
 #include "mydata.h"
 #include "mybvh.h"
 #include <cuda_runtime.h>
 
+// C++ functions on host
+void init_device();
+Image launch_compute_image_device(vec4* d_pixels,
+                                  int width,
+                                  int height,
+                                  const Camera& camera,
+                                  const vec4* d_lightsPos,
+                                  const vec4* d_lightsColor,
+                                  int nLights,
+                                  const vec4& background,
+                                  const vec4& ambience,
+                                  int max_depth,
+                                  const Data* data,
+                                  const BVH::BVHNodes_SoA* bvhNodes);
+
+// Kernels and device functions
 __global__ void compute_image_device(vec4* pixels,
                                      const int width,
                                      const int height,
@@ -28,6 +46,23 @@ __global__ void compute_image_device(vec4* pixels,
                                      const int max_depth,
                                      const Data *data,
                                      const BVH::BVHNodes_SoA *bvhNodes);
+
+__global__ void adaptive_supersampling_device(vec4* pixels,
+                                              vec4* tmpPixels,
+                                              const int width,
+                                              const int height,
+                                              const Camera camera,
+                                              const vec4 *lightsPos,
+                                              const vec4 *lightsColor,
+                                              const int nLights,
+                                              const vec4 background,
+                                              const vec4 ambience,
+                                              const int max_depth,
+                                              const Data *data,
+                                              const BVH::BVHNodes_SoA *bvhNodes,
+                                              const int subp,
+                                              const int threshold);
+
 
 __device__ vec4 trace_device(const Ray &ray,
                              const vec4 &background,

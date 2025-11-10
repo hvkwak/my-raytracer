@@ -17,10 +17,108 @@
 #include "utils/vec4.h"
 #include "utils/Camera.h"
 #include "utils/Ray.h"
+#include "utils/Image.h"
 #include "mytracer_gpu.h"
 #include "mydata.h"
 #include "mybvh.h"
 #include "myutils.h"
+
+//=============================================================================
+// functions from host
+//=============================================================================
+
+void init_device(void){
+  // Initialize CUDA device
+  int dev = 0;
+  cudaDeviceProp deviceProp;
+  CHECK(cudaGetDeviceProperties(&deviceProp, dev));
+  printf("Using Device %d: %s\n", dev, deviceProp.name);
+  CHECK(cudaSetDevice(dev));
+}
+
+/**
+ * @brief C++ wrapper to launch compute_image_device kernel
+ * This function can be called from regular C++ code (like mytracer.cpp)
+ */
+Image launch_compute_image_device(vec4* d_pixels,
+                                  int width,
+                                  int height,
+                                  const Camera& camera,
+                                  const vec4* d_lightsPos,
+                                  const vec4* d_lightsColor,
+                                  int nLights,
+                                  const vec4& background,
+                                  const vec4& ambience,
+                                  int max_depth,
+                                  const Data* data,
+                                  const BVH::BVHNodes_SoA* bvhNodes)
+{
+  int nThreads = 16;
+  dim3 block(nThreads, nThreads);
+  dim3 grid((width + block.x - 1) / block.x, (height + block.y - 1) / block.y);
+
+  // compute image
+  compute_image_device<<<grid, block>>>(d_pixels,
+                                        width,
+                                        height,
+                                        camera,
+                                        d_lightsPos,
+                                        d_lightsColor,
+                                        nLights,
+                                        background,
+                                        ambience,
+                                        max_depth,
+                                        data,
+                                        bvhNodes);
+
+  double iStart = seconds();
+  CHECK(cudaDeviceSynchronize());
+  double iElaps = seconds() - iStart;
+  printf("compute_image_device <<<Grid: %d, %d || Block: %d, %d  >>>  Time elapsed %f sec.\n", grid.x, grid.y, block.x, block.y, iElaps);
+  CHECK(cudaGetLastError()) ;
+
+  const int subp = 4;
+  const double threshold = 0.02;
+  vec4* d_tmpPixels;
+  size_t nBytes = width*height*sizeof(vec4);
+  CHECK(cudaMalloc(&d_tmpPixels, nBytes));
+  CHECK(cudaMemcpy(d_tmpPixels, d_pixels, nBytes, cudaMemcpyDeviceToDevice));
+
+  // do adaptive suersampling
+  adaptive_supersampling_device<<<grid, block>>>(d_pixels,
+                                                 d_tmpPixels,
+                                                 width,
+                                                 height,
+                                                 camera,
+                                                 d_lightsPos,
+                                                 d_lightsColor,
+                                                 nLights,
+                                                 background,
+                                                 ambience,
+                                                 max_depth,
+                                                 data,
+                                                 bvhNodes,
+                                                 subp,
+                                                 threshold);
+  iStart = seconds();
+  CHECK(cudaDeviceSynchronize());
+  iElaps = seconds() - iStart;
+  printf("adaptive_supersampling <<<Grid: %d, %d || Block: %d, %d  >>>  Time elapsed %f sec.\n", grid.x, grid.y, block.x, block.y, iElaps);
+  CHECK(cudaGetLastError());
+  CHECK(cudaFree(d_tmpPixels));
+
+
+  // output image
+  Image image;
+  image.resize(width, height);
+#pragma omp parallel for
+  for (int x = 0; x < width; ++x) {
+    for (int y = 0; y < height; ++y) {
+      image(x, y) = d_pixels[y*width + x];
+    }
+  }
+  return image;
+}
 
 //=============================================================================
 // Kernel
@@ -61,11 +159,81 @@ __global__ void compute_image_device(vec4 *pixels,
                             data,
                             bvhNodes);
 
-  // // Store result
+  // prevent over-saturation
+  color = min(color, vec4(1, 1, 1));
+
+  // Store result
   int pixelIdx = y * width + x;
   pixels[pixelIdx] = vec4(color[0], color[1], color[2]);
 }
 
+__global__ void adaptive_supersampling_device(vec4* pixels,
+                                              vec4* tmpPixels,
+                                              const int width,
+                                              const int height,
+                                              const Camera camera,
+                                              const vec4 *lightsPos,
+                                              const vec4 *lightsColor,
+                                              const int nLights,
+                                              const vec4 background,
+                                              const vec4 ambience,
+                                              const int max_depth,
+                                              const Data *data,
+                                              const BVH::BVHNodes_SoA *bvhNodes,
+                                              const int subp,
+                                              const int threshold)
+{
+  // Calculate pixel coordinates
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+  // Check bounds
+  if (x >= width || y >= height) {
+    return;
+  }
+
+  int pixelIdx = (y) * width + (x);
+
+
+
+  // check if pixel color deviates to much from the surrounding
+  vec4 color(0, 0, 0);
+  vec4 c = tmpPixels[pixelIdx];
+  double n = normSq(c - tmpPixels[(y) * width + (x+1)]) + normSq(c - tmpPixels[(y+1) * width + (x)]) +
+             normSq(c - tmpPixels[(y) * width + (x-1)]) + normSq(c - tmpPixels[(y-1) * width + (x)]);
+
+  if (n > threshold) {
+    Ray ray;
+
+    // shoot 16 rays through the pixel patch
+    for (int si = 0; si < subp; si++) {
+      const double xoffset =
+          (si) / static_cast<double>(subp) - 0.5 + 1.0 / (2.0 * subp);
+      for (int sj = 0; sj < subp; sj++) {
+        const double yoffset =
+            (sj) / static_cast<double>(subp) - 0.5 + 1.0 / (2.0 * subp);
+        ray = camera.primary_ray(static_cast<double>(x) + xoffset,
+                                  static_cast<double>(y) + yoffset);
+        color += trace_device(ray,
+                              background,
+                              ambience,
+                              max_depth,
+                              lightsPos,
+                              lightsColor,
+                              nLights,
+                              data,
+                              bvhNodes);
+      }
+    }
+    color /= subp * subp;
+
+    // avoid over-saturation
+    color = min(color, vec4(1, 1, 1));
+
+    // store pixel color
+    pixels[pixelIdx] = vec4(color[0], color[1], color[2]);
+  }
+}
 //=============================================================================
 // Device Functions
 //=============================================================================
