@@ -6,8 +6,10 @@
 // Note: The original exercise framework/codebase is not published in this repo.
 // ============================================================================
 
-#include "./common/common.h"
+#ifdef CUDA_ENABLED
+#include "common/common.h"
 #include <cuda_runtime.h>
+#endif // CUDA_ENABLED
 #include <stdio.h>
 #include <ctime>
 #include <cfloat>
@@ -40,7 +42,9 @@ void init_device(void){
  * @brief C++ wrapper to launch compute_image_device kernel
  * This function can be called from regular C++ code (like mytracer.cpp)
  */
-Image launch_compute_image_device(vec4* d_pixels,
+void launch_compute_image_device(vec4* d_pixels,
+                                  vec4* d_tmpPixels,
+                                 vec4* d_image,
                                   int width,
                                   int height,
                                   const Camera& camera,
@@ -58,6 +62,8 @@ Image launch_compute_image_device(vec4* d_pixels,
   dim3 grid((width + block.x - 1) / block.x, (height + block.y - 1) / block.y);
 
   // compute image
+  printf("compute_image_device...\n");
+  double iStart = seconds();
   compute_image_device<<<grid, block>>>(d_pixels,
                                         width,
                                         height,
@@ -70,21 +76,19 @@ Image launch_compute_image_device(vec4* d_pixels,
                                         max_depth,
                                         data,
                                         bvhNodes);
-
-  double iStart = seconds();
   CHECK(cudaDeviceSynchronize());
-  double iElaps = seconds() - iStart;
-  printf("compute_image_device <<<Grid: %d, %d || Block: %d, %d  >>>  Time elapsed %f sec.\n", grid.x, grid.y, block.x, block.y, iElaps);
   CHECK(cudaGetLastError()) ;
+  double iElaps = seconds() - iStart;
+  printf("compute_image_device <<<Grid: %d, %d || Block: %d, %d >>>  Time elapsed %f sec.  \n", grid.x, grid.y, block.x, block.y, iElaps);
 
   const int subp = 4;
   const double threshold = 0.02;
-  vec4* d_tmpPixels;
   size_t nBytes = width*height*sizeof(vec4);
-  CHECK(cudaMalloc(&d_tmpPixels, nBytes));
   CHECK(cudaMemcpy(d_tmpPixels, d_pixels, nBytes, cudaMemcpyDeviceToDevice));
 
   // do adaptive suersampling
+  printf("adaptive_supersampling_device...\n");
+  iStart = seconds();
   adaptive_supersampling_device<<<grid, block>>>(d_pixels,
                                                  d_tmpPixels,
                                                  width,
@@ -100,24 +104,13 @@ Image launch_compute_image_device(vec4* d_pixels,
                                                  bvhNodes,
                                                  subp,
                                                  threshold);
-  iStart = seconds();
   CHECK(cudaDeviceSynchronize());
-  iElaps = seconds() - iStart;
-  printf("adaptive_supersampling <<<Grid: %d, %d || Block: %d, %d  >>>  Time elapsed %f sec.\n", grid.x, grid.y, block.x, block.y, iElaps);
   CHECK(cudaGetLastError());
-  CHECK(cudaFree(d_tmpPixels));
+  iElaps = seconds() - iStart;
+  printf("adaptive_supersampling <<<Grid: %d, %d || Block: %d, %d  >>>  Time elapsed %f sec.  \n", grid.x, grid.y, block.x, block.y, iElaps);
 
-
-  // output image
-  Image image;
-  image.resize(width, height);
-#pragma omp parallel for
-  for (int x = 0; x < width; ++x) {
-    for (int y = 0; y < height; ++y) {
-      image(x, y) = d_pixels[y*width + x];
-    }
-  }
-  return image;
+  // copy to host
+  CHECK(cudaMemcpy(d_image, d_pixels, nBytes, cudaMemcpyDeviceToHost));
 }
 
 //=============================================================================
@@ -196,8 +189,6 @@ __global__ void adaptive_supersampling_device(vec4* pixels,
   }
 
   int pixelIdx = (y) * width + (x);
-
-
 
   // check if pixel color deviates to much from the surrounding
   vec4 color(0, 0, 0);
@@ -287,11 +278,11 @@ __device__ vec4 trace_device(const Ray &ray,
                                                      lightsColor,
                                                      nLights);
 
-  int i = 1;
+  int i = 0;
   double accumulated_weight = material.mirror;
   const double epsilon = 1e-4;
   vec4 v = reflect(ray.direction_, intersection_normal);
-  while (i < max_depth && accumulated_weight > 0.0) {
+  while (i < max_depth) {
     Ray reflected_ray = Ray(intersection_point + epsilon * v, v);
     // see if reflected ray intersects scene
     if (!intersect_scene_device(reflected_ray,

@@ -29,6 +29,7 @@ class BVH {
 
 public:
 
+#ifdef CUDA_ENABLED
   // BVHNode attributes in SoA
   struct BVHNodes_SoA {
     vec4 *bb_min_ = nullptr;
@@ -37,6 +38,7 @@ public:
     int *firstTriIdx_ = nullptr;
     int *triCount_ = nullptr;
   };
+#endif
 
   BVH() = default;
   ~BVH();
@@ -47,12 +49,14 @@ public:
    */
   void init(std::vector<Mesh*> &meshes);
 
+#ifdef CUDA_ENABLED
   /**
    * @brief Initialize BVH with SoA layout for GPU acceleration
    * @param meshes Vector of mesh pointers
    * @param data Pointer to SoA data structure
    */
   void initSoA(std::vector<Mesh*> &meshes, Data* data);
+#endif
 
   /**
    * @brief Check if BVH has been initialized
@@ -102,8 +106,10 @@ public:
   //                       vec4 &intersection_normal,
   //                       double &intersection_distance) const;
 
+#ifdef CUDA_ENABLED
   BVHNodes_SoA * d_bvhNodesSoA_ = nullptr;
   int d_bvhNodesSize = 0;
+#endif
 
 private:
 
@@ -146,6 +152,7 @@ private:
 
   // ===== SoA-specific methods =====
 
+#ifdef CUDA_ENABLED
   /**
    * @brief Compute bounding box for a node (SoA version)
    */
@@ -160,6 +167,7 @@ private:
    * @brief Partition triangles around split position (SoA version)
    */
   void inplace_partitionSoA(int nodeIdx, double splitPos, int axis, int & i);
+#endif
 
   // ===== Splitting heuristics =====
 
@@ -168,10 +176,12 @@ private:
    */
   double median(int axis, int nodeIdx);
 
+#ifdef CUDA_ENABLED
   /**
    * @brief Compute median centroid position for splitting (SoA version)
    */
   double medianSoA(int axis, int nodeIdx);
+#endif
 
   /**
    * @brief Compute median of array in-place

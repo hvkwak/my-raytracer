@@ -8,6 +8,7 @@
 
 #pragma once
 
+#ifdef CUDA_ENABLED
 #include "utils/vec4.h"
 #include <cuda_runtime.h>
 
@@ -35,3 +36,4 @@ __inline__ __device__ double det4D_device(const vec4 & v1, const vec4 & v2, cons
          - v2[0] * det2D_device(v1[1], v3[1], v1[2], v3[2])
          + v3[0] * det2D_device(v1[1], v2[1], v1[2], v2[2]);
 }
+#endif // CUDA_ENABLED

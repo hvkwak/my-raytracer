@@ -9,6 +9,7 @@
 #ifndef MYTRACER_GPU_H
 #define MYTRACER_GPU_H
 
+#ifdef CUDA_ENABLED
 #include <vector>
 #include "utils/Camera.h"
 #include "utils/vec4.h"
@@ -20,18 +21,20 @@
 
 // C++ functions on host
 void init_device();
-Image launch_compute_image_device(vec4* d_pixels,
-                                  int width,
-                                  int height,
-                                  const Camera& camera,
-                                  const vec4* d_lightsPos,
-                                  const vec4* d_lightsColor,
-                                  int nLights,
-                                  const vec4& background,
-                                  const vec4& ambience,
-                                  int max_depth,
-                                  const Data* data,
-                                  const BVH::BVHNodes_SoA* bvhNodes);
+void launch_compute_image_device(vec4* d_pixels,
+                                 vec4* d_tmpPixels,
+                                 vec4* d_image,
+                                 int width,
+                                 int height,
+                                 const Camera& camera,
+                                 const vec4* d_lightsPos,
+                                 const vec4* d_lightsColor,
+                                 int nLights,
+                                 const vec4& background,
+                                 const vec4& ambience,
+                                 int max_depth,
+                                 const Data* data,
+                                 const BVH::BVHNodes_SoA* bvhNodes);
 
 // Kernels and device functions
 __global__ void compute_image_device(vec4* pixels,
@@ -128,4 +131,5 @@ __device__ vec4 lighting_device(const vec4 &point,
 
 __device__ double diffuse_device(const vec4 &point, const vec4 &normal, const vec4 &lightPos);
 __device__ double reflection_device(const vec4 &point, const vec4 &normal, const vec4 &view, const vec4 &lightPos);
+#endif // CUDA_ENABLED
 #endif // MYTRACER_GPU_H

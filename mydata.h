@@ -12,7 +12,9 @@
 #include "utils/vec4.h"
 #include <Mesh.h>
 #include <vector>
+#ifdef CUDA_ENABLED
 #include <cuda_runtime.h>
+#endif
 
 /**
  * @brief Structure-of-Arrays (SoA) data layout for GPU-friendly memory access

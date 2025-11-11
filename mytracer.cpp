@@ -13,9 +13,11 @@
 #include <sstream>
 #include <string>
 #include <map>
+#ifdef CUDA_ENABLED
 #include "common/common.h"
 #include <cuda_runtime.h>
 #include "mytracer_gpu.h"
+#endif // CUDA_ENABLED
 
 Raytracer::~Raytracer(){
   // clean up
@@ -37,15 +39,13 @@ void Raytracer::init_cpu(const std::string &filename){
   bvh.init(meshes_);
 }
 
+#ifdef CUDA_ENABLED
 void Raytracer::init_cuda(const std::string &filename){
   // pre read scene, read scene, build SoA, and build BVH
   pre_read_scene(filename);
   read_scene(filename);
-  std::cout << "buildData...\n";
   build_Data();
-  std::cout << "initSoA...\n";
   bvh.initSoA(meshes_, data_);
-
 }
 
 void Raytracer::allocate(size_t new_bytes, size_t &old_bytes, void* &ptr){
@@ -67,7 +67,9 @@ void Raytracer::prepareDeviceResources() {
   // allocate nPixels
   size_t nPixels = static_cast<size_t>(camera_.width_) * camera_.height_;
   size_t pixels_bytes   = nPixels * sizeof(vec4);
-  allocate(pixels_bytes, d_pixels_bytes_, reinterpret_cast<void*&>(d_pixels_)); // TODO
+  allocate(pixels_bytes, d_pixels_bytes_, reinterpret_cast<void*&>(d_pixels_));
+  allocate(pixels_bytes, d_tmpPixels_bytes_, reinterpret_cast<void*&>(d_tmpPixels_));
+  d_image_ = (vec4*)malloc(d_pixels_bytes_);
 
   // allocate Lights
   nLights = lights_.size();
@@ -75,7 +77,6 @@ void Raytracer::prepareDeviceResources() {
   allocate(lights_bytes, d_lightsPos_bytes_, reinterpret_cast<void*&>(d_lightsPosition_));
   allocate(lights_bytes, d_lightsColor_bytes_, reinterpret_cast<void*&>(d_lightsColor_));
   copyLights(); // from std::vector
-  // CHECK(cudaMemcpy(d_A, h_A, nBytes, cudaMemcpyHostToDevice)); TODO: lights to array!
 }
 
 void Raytracer::copyLights(){
@@ -104,19 +105,34 @@ void Raytracer::compute_image_cuda(){
   image_.resize(camera_.width_, camera_.height_);
 
   // launch kernel invoke kernel at host
-  image_ = launch_compute_image_device(d_pixels_,
-                                      camera_.width_,
-                                      camera_.height_,
-                                      camera_,
-                                      d_lightsPosition_,
-                                      d_lightsColor_,
-                                      nLights,
-                                      background_,
-                                      ambience_,
-                                      max_depth_,
-                                      data_,
-                                      bvh.d_bvhNodesSoA_);
-  std::cout << " done." << std::endl;
+  double iStart = seconds();
+  launch_compute_image_device(d_pixels_,
+                              d_tmpPixels_,
+                              d_image_,
+                              camera_.width_,
+                              camera_.height_,
+                              camera_,
+                              d_lightsPosition_,
+                              d_lightsColor_,
+                              nLights,
+                              background_,
+                              ambience_,
+                              max_depth_,
+                              data_,
+                              bvh.d_bvhNodesSoA_);
+
+
+  // output image
+  printf("output image...");
+#pragma omp parallel for
+  for (int x = 0; x < camera_.width_; ++x) {
+    for (int y = 0; y < camera_.height_; ++y) {
+      image_(x, y) = d_image_[y*camera_.width_ + x];
+    }
+  }
+  double iElaps = seconds() - iStart;
+  std::cout << "done.\n";
+  std::cout << "Raytracer::compute_image_cuda()...done. Time elapsed " << iElaps << " sec. \n"  ;
 }
 
 /**
@@ -311,10 +327,18 @@ void Raytracer::pre_read_scene(const std::string &filename)
 }
 
 void Raytracer::freeVariables() {
+  if (d_image_){
+    free(d_image_);
+  }
   if (d_pixels_) {
     CHECK(cudaFree(d_pixels_));
     d_pixels_ = nullptr;
     d_pixels_bytes_ = 0;
+  }
+  if (d_tmpPixels_) {
+    CHECK(cudaFree(d_tmpPixels_));
+    d_tmpPixels_ = nullptr;
+    d_tmpPixels_bytes_ = 0;
   }
   if (d_lightsPosition_) {
     CHECK(cudaFree(d_lightsPosition_));
@@ -445,6 +469,7 @@ void Raytracer::pre_read_obj(const char* _filename)
             << data_->tTextIdxCount_ << " textIdxCount"
             << std::flush;
 }
+#endif // CUDA_ENABLED
 
 /**
  * @brief returns diffuse term
