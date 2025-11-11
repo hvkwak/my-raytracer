@@ -61,8 +61,7 @@ __global__ void adaptive_supersampling_device(vec4* pixels,
                                               const Data *data,
                                               const BVH::BVHNodes_SoA *bvhNodes,
                                               const int subp,
-                                              const int threshold);
-
+                                              const double threshold);
 
 __device__ vec4 trace_device(const Ray &ray,
                              const vec4 &background,

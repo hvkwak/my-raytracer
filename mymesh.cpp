@@ -193,6 +193,11 @@ bool Mesh::intersect_triangle(const Triangle &triangle,
   const vec4 column3 = {-ray.direction_[0], -ray.direction_[1], -ray.direction_[2]};
   const vec4 column4 = {ray.origin_[0] - p2[0], ray.origin_[1] - p2[1], ray.origin_[2] - p2[2]};
   const double S = det4D(column1, column2, column3);
+
+  // Check for degenerate triangle (determinant near zero)
+  if (std::fabs(S) < 1e-10)
+    return false;
+
   const double alpha = det4D(column4, column2, column3) / S;
   const double beta = det4D(column1, column4, column3) / S;
   const double gamma = (1.0 - alpha - beta);

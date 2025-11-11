@@ -9,14 +9,6 @@
 #include "utils/vec3.h"
 #include "utils/vec4.h"
 
-// Make this header usable with and without NVCC
-#ifndef __CUDACC__
-  #define CUDA_HD
-#else
-  #include <cuda_runtime.h>
-  #define CUDA_HD __host__ __device__
-#endif
-
 /**
  * @brief returns determinant of a 2x2 matrix
  *
@@ -27,7 +19,7 @@
  *
  * @return determinant of a 2x2 matrix
  */
-CUDA_HD double det2D(double a, double b, double c, double d){
+double det2D(double a, double b, double c, double d){
     return a*d - b*c;
 }
 
@@ -39,7 +31,7 @@ CUDA_HD double det2D(double a, double b, double c, double d){
  *        v3: third column of matrix
  * @return determinant of a 3x3 matrix
  */
-CUDA_HD double det3D(const vec3 & v1, const vec3 & v2, const vec3 & v3){
+double det3D(const vec3 & v1, const vec3 & v2, const vec3 & v3){
     return v1[0] * det2D(v2[1], v3[1], v2[2], v3[2])
          - v2[0] * det2D(v1[1], v3[1], v1[2], v3[2])
          + v3[0] * det2D(v1[1], v2[1], v1[2], v2[2]);
@@ -53,7 +45,7 @@ CUDA_HD double det3D(const vec3 & v1, const vec3 & v2, const vec3 & v3){
  *        v3: third column of matrix
  * @return determinant of a 3x3 matrix
  */
-CUDA_HD double det4D(const vec4 & v1, const vec4 & v2, const vec4 & v3){
+double det4D(const vec4 & v1, const vec4 & v2, const vec4 & v3){
     return v1[0] * det2D(v2[1], v3[1], v2[2], v3[2])
          - v2[0] * det2D(v1[1], v3[1], v1[2], v3[2])
          + v3[0] * det2D(v1[1], v2[1], v1[2], v2[2]);

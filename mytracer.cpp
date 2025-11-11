@@ -17,6 +17,20 @@
 #include <cuda_runtime.h>
 #include "mytracer_gpu.h"
 
+Raytracer::~Raytracer(){
+  // clean up
+  for (auto o : objects_) {
+    delete o;
+  }
+  for (auto m : meshes_) {
+    delete m;
+  }
+#ifdef CUDA_ENABLED
+  freeVariables();
+  freeData();
+#endif
+}
+
 void Raytracer::init_cpu(const std::string &filename){
   // reads scene and build BVH
   read_scene(filename);
@@ -27,8 +41,11 @@ void Raytracer::init_cuda(const std::string &filename){
   // pre read scene, read scene, build SoA, and build BVH
   pre_read_scene(filename);
   read_scene(filename);
+  std::cout << "buildData...\n";
   build_Data();
+  std::cout << "initSoA...\n";
   bvh.initSoA(meshes_, data_);
+
 }
 
 void Raytracer::allocate(size_t new_bytes, size_t &old_bytes, void* &ptr){
@@ -53,7 +70,7 @@ void Raytracer::prepareDeviceResources() {
   allocate(pixels_bytes, d_pixels_bytes_, reinterpret_cast<void*&>(d_pixels_)); // TODO
 
   // allocate Lights
-  size_t nLights = lights_.size();
+  nLights = lights_.size();
   size_t lights_bytes = nLights * sizeof(Light);
   allocate(lights_bytes, d_lightsPos_bytes_, reinterpret_cast<void*&>(d_lightsPosition_));
   allocate(lights_bytes, d_lightsColor_bytes_, reinterpret_cast<void*&>(d_lightsColor_));
@@ -110,10 +127,6 @@ void Raytracer::compute_image_cuda(){
 void Raytracer::build_Data(){
 
   std::cout << "build Data...";
-
-  // Data(concat Vectors) clean up
-  freeData();
-
   int vertexCount = data_->tVertexCount_;
   int vertexIdxCount = data_->tVertexIdxCount_;
   int textIdxCount = data_->tTextIdxCount_;
@@ -239,7 +252,7 @@ void Raytracer::build_Data(){
     tbase = tbase + textureCount;
     meshIdx++;
   }
-  std::cout << " done. \n" << std::flush;
+  std::cout << " done...... \n" << std::flush;
 }
 
 
@@ -248,8 +261,13 @@ void Raytracer::build_Data(){
  */
 void Raytracer::pre_read_scene(const std::string &filename)
 {
+  // clean up Data
+  freeData();
+
+  // init
   if (!data_){
     CHECK(cudaMallocManaged(&data_, sizeof(Data)));
+    std::cout << "data_ mallocManaged OK\n";
   }
 
   /// Pre-read variables reset
@@ -302,6 +320,7 @@ void Raytracer::freeVariables() {
     CHECK(cudaFree(d_lightsPosition_));
     d_lightsPosition_ = nullptr;
     d_lightsPos_bytes_ = 0;
+    nLights = 0;
   }
   if (d_lightsColor_) {
     CHECK(cudaFree(d_lightsColor_));
@@ -311,41 +330,38 @@ void Raytracer::freeVariables() {
 }
 
 void Raytracer::freeData(){
-  if (!data_) return;
-  auto F = [&](auto*& p){ if (p) { cudaFree(p); p = nullptr; } };
-  F(data_->vertexPos_);
-  F(data_->vertexNormals_);
-  F(data_->vertexIdx_);
-  F(data_->textureIdx_);
-  F(data_->textureCoordinatesU_);
-  F(data_->textureCoordinatesV_);
-  F(data_->firstVertex_);
-  F(data_->vertexCount_);
-  F(data_->firstVertexIdx_);
-  F(data_->vertexIdxCount_);
-  F(data_->firstTextCoord_);
-  F(data_->textCoordCount_);
-  F(data_->firstTextIdx_);
-  F(data_->textIdxCount_);
-  F(data_->normals_);
-  F(data_->vertexMeshId_);
-  F(data_->meshTexWidth_);
-  F(data_->meshTexHeight_);
-  F(data_->meshTexels_);
-  F(data_->firstMeshTex_);
-  F(data_->meshDrawMode_);
-  F(data_->materialAmbient_);
-  F(data_->materialDiffuse_);
-  F(data_->materialSpecular_);
-  F(data_->materialMirror_);
-  F(data_->materialShininess_);
-  F(data_->materialShadowable_);
-  F(data_);
-}
-
-Raytracer::~Raytracer(){
-  freeVariables();
-  freeData();
+  if (data_){
+    // not nullptr
+    auto F = [&](auto *&p) {if (p) { cudaFree(p);p = nullptr;}};
+    F(data_->vertexPos_);
+    F(data_->vertexNormals_);
+    F(data_->vertexIdx_);
+    F(data_->textureIdx_);
+    F(data_->textureCoordinatesU_);
+    F(data_->textureCoordinatesV_);
+    F(data_->firstVertex_);
+    F(data_->vertexCount_);
+    F(data_->firstVertexIdx_);
+    F(data_->vertexIdxCount_);
+    F(data_->firstTextCoord_);
+    F(data_->textCoordCount_);
+    F(data_->firstTextIdx_);
+    F(data_->textIdxCount_);
+    F(data_->normals_);
+    F(data_->vertexMeshId_);
+    F(data_->meshTexWidth_);
+    F(data_->meshTexHeight_);
+    F(data_->meshTexels_);
+    F(data_->firstMeshTex_);
+    F(data_->meshDrawMode_);
+    F(data_->materialAmbient_);
+    F(data_->materialDiffuse_);
+    F(data_->materialSpecular_);
+    F(data_->materialMirror_);
+    F(data_->materialShininess_);
+    F(data_->materialShadowable_);
+    F(data_);
+  };
 }
 
 /**
@@ -512,11 +528,12 @@ vec4 Raytracer::lighting(const vec4 &point, const vec4 &normal,
     double dot_rv = reflection(point, normal, view, light);
     double reflection_ = dot_rv;
     // Compute specular exponent
-    double i = 0.0;
-    while (i < material.shininess - 1){
-      reflection_ *= dot_rv;
-      i += 1.0;
-    }
+    reflection_ = std::pow(reflection_, material.shininess);
+    // double i = 0.0;
+    // while (i < material.shininess - 1){
+    //   reflection_ *= dot_rv;
+    //   i += 1.0;
+    // }
 
     // Shadow calculation
     bool isShadow = false;

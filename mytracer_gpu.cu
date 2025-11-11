@@ -21,7 +21,7 @@
 #include "mytracer_gpu.h"
 #include "mydata.h"
 #include "mybvh.h"
-#include "myutils.h"
+#include "myutils_gpu.h"
 
 //=============================================================================
 // functions from host
@@ -181,14 +181,17 @@ __global__ void adaptive_supersampling_device(vec4* pixels,
                                               const Data *data,
                                               const BVH::BVHNodes_SoA *bvhNodes,
                                               const int subp,
-                                              const int threshold)
+                                              const double threshold)
 {
   // Calculate pixel coordinates
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
 
   // Check bounds
-  if (x >= width || y >= height) {
+  if (x >= width-1 || y >= height-1) {
+    return;
+  }
+  if (x < 1 || y < 1) {
     return;
   }
 
@@ -508,19 +511,23 @@ __device__ bool intersect_triangle_device(const vec4& p0,
 
   // Solve for barycentric coordinates and ray parameter t
   // Same algorithm as AoS version
-  // TODO: division with zero due to S?
   const vec4 column1 = {p0[0] - p2[0], p0[1] - p2[1], p0[2] - p2[2]};
   const vec4 column2 = {p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]};
   const vec4 column3 = {-ray.direction_[0], -ray.direction_[1], -ray.direction_[2]};
   const vec4 column4 = {ray.origin_[0] - p2[0], ray.origin_[1] - p2[1], ray.origin_[2] - p2[2]};
-  const double S = det4D(column1, column2, column3);
-  const double alpha = det4D(column4, column2, column3) / S;
-  const double beta = det4D(column1, column4, column3) / S;
+  const double S = det4D_device(column1, column2, column3);
+
+  // Check for degenerate triangle (determinant near zero)
+  if (fabs(S) < 1e-10)
+    return false;
+
+  const double alpha = det4D_device(column4, column2, column3) / S;
+  const double beta = det4D_device(column1, column4, column3) / S;
   const double gamma = (1.0 - alpha - beta);
   const double eps_shadow_acne = 1e-5;
 
   // check if t is correct: positive && beyond shadow acne
-  const double t = det4D(column1, column2, column4) / S;
+  const double t = det4D_device(column1, column2, column4) / S;
   if (t <= eps_shadow_acne)
     return false;
 
@@ -570,7 +577,7 @@ __device__ bool intersect_triangle_device(const vec4& p0,
 
 __device__ bool intersectAABB(const Ray & ray, const vec4 & bb_min_, const vec4 & bb_max_, double & tmin_){
 
-  // TODO: division with zero due to ray.direction_?
+  // TODO: check division with zero due to ray.direction_?
 
   // Slab method for ray-AABB intersection
   double tmin = (bb_min_[0] - ray.origin_[0]) / ray.direction_[0];
@@ -660,11 +667,12 @@ __device__ vec4 lighting_device(const vec4 &point,
     double dot_rv = reflection_device(point, normal, view, light_position);
     double reflection_ = dot_rv;
     // Compute specular exponent
-    double i = 0.0;
-    while (i < material.shininess - 1){
-      reflection_ *= dot_rv;
-      i += 1.0;
-    }
+    reflection_ = pow(reflection_, material.shininess);
+    // double i = 0.0;
+    // while (i < material.shininess - 1){
+    //   reflection_ *= dot_rv;
+    //   i += 1.0;
+    // }
 
     // Shadow calculation
     bool isShadow = false;
