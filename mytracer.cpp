@@ -349,6 +349,9 @@ void Raytracer::pre_read_scene(const std::string &filename)
   ifs.close();
 }
 
+/**
+ * @brief Free device variables and reset sizes
+ */
 void Raytracer::freeVariables() {
   if (d_image_){
     free(d_image_);
@@ -376,6 +379,9 @@ void Raytracer::freeVariables() {
   }
 }
 
+/**
+ * @brief Free SoA data structure and all its allocated memory
+ */
 void Raytracer::freeData(){
   if (data_){
     // not nullptr
