@@ -1,13 +1,21 @@
 # My Ray Tracer
-Implementation of ray tracing (based on the course *Computer Graphics (Graphische Datenverarbeitung)* @ Computer Graphics Group, TU Dortmund), BVH, and acceleration with CUDA
+CPU and CUDA implementations of a ray tracer with BVH acceleration
 
 ## Note
-⚠️ The official exercise codebase is **copyrighted** by the **Computer Graphics Group, TU Dortmund** and **is not included** in this repository.
+⚠️ This repository is based on the course *Computer Graphics (Graphische Datenverarbeitung)* at the Computer Graphics Group, TU Dortmund. The official exercise codebase is **copyrighted** by the **Computer Graphics Group, TU Dortmund** and **is not included** in this repository. All code in this repository is my own implementation.
+
+## Benchmarks
+| Backend | Scene  | Resolution | SPP | Time  | Hardware                                      | Notes                                      |
+|--------:|--------|------------|-----|-------|-----------------------------------------------|--------------------------------------------|
+| CPU     | Office | 1920×1080  | 16  | 5.3 s | AMD Ryzen 5 5600X (6-core)                    | BVH (median split)                          |
+| CUDA    | Office | 1920×1080  | 16  | 6.0 s | NVIDIA RTX A2000 (host: AMD Ryzen 5 5600X)    | Unified Memory, irregular access, deep stack|
+(SPP: Samples Per Pixel)
 
 ## Updates
-- [2025-11-04] Mesh and Triangle attributes can now be saved in a SoA (Structure-of-Arrays) layout for coalesced memory access.
-- [2025-10-27] Implemented basic BVH (Bounding Volume Hierarchy) with my median-splitter. Ref: [jbikker](https://github.com/jbikker/bvh_article)
-- [2025-10-20] Implemented all TODOs in the course exercises (Phong lighting model, reflections, intersections, flat and Phong shading, textures, acceleration with axis-aligned bounding box (AABB) tests) for ray tracing.
+- [2025-11-12] Implemented CUDA backend. It shows **slower** performance **than CPU** due to **Unified Memory**, **irregular memory access** from BVH traversal, and **per-thread memory exhaustion** from a deep call stack (trace → intersect_scene → intersect_bvh → intersect_triangle → lighting).
+- [2025-11-04] Mesh and Triangle attributes use an `SoA` (Structure-of-Arrays) layout for coalesced memory access.
+- [2025-10-27] Implemented basic BVH with a median-split builder, which renders `10×` faster than the baseline with AABB-tests. (Rendering the `Office` scene at `1920×1080` takes **5.3 s** on an AMD Ryzen 5 5600X (6-core)) Ref: [jbikker](https://github.com/jbikker/bvh_article)
+- [2025-10-20] Implemented all TODOs in the course exercises (Phong lighting model, reflections, intersections, flat and Phong shading, textures, acceleration with axis-aligned bounding box (AABB-tests)) for ray tracing. All sample-solution images were reproduced.
 
 ## Outputs
 Below is a subset of the results that can be found in the [outputs](outputs/).
@@ -42,7 +50,7 @@ Below is a subset of the results that can be found in the [outputs](outputs/).
       <sub>o_08_office.png</sub>
     </td>
     <td align="center">
-      <a href="outputs/o_07_toon_faces.png"><img src="outputs/o_07_toon_faces.png" alt="molecule" width="320"></a><br>
+      <a href="outputs/o_07_toon_faces.png"><img src="outputs/o_07_toon_faces.png" alt="toon_faces" width="320"></a><br>
       <sub>o_07_toon_faces.png</sub>
     </td>
   </tr>

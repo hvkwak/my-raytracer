@@ -20,6 +20,9 @@
 // Public Methods
 // =============================================================================
 
+/**
+ * @brief Destructor for BVH
+ */
 BVH::~BVH(){
 #ifdef CUDA_ENABLED
   if (d_bvhNodesSoA_){
@@ -34,6 +37,10 @@ BVH::~BVH(){
 #endif
 }
 
+/**
+ * @brief Build BVH with AoS layout
+ * @param meshes Vector of mesh pointers
+ */
 void BVH::init(std::vector<Mesh*> &meshes) {
 
   std::cout << "Build BVH...";
@@ -73,10 +80,22 @@ void BVH::init(std::vector<Mesh*> &meshes) {
   }
 }
 
+/**
+ * @brief Check if BVH is initialized
+ * @return true if initialized
+ */
 bool BVH::isInitialized() const{
   return isInitialized_;
 }
 
+/**
+ * @brief Test ray-AABB intersection using slab method
+ * @param ray Ray to test
+ * @param bb_min_ AABB minimum corner
+ * @param bb_max_ AABB maximum corner
+ * @param tmin_ Minimum intersection distance (output)
+ * @return true if intersection found
+ */
 bool BVH::intersectAABB(const Ray & ray, const vec4 & bb_min_, const vec4 & bb_max_, double & tmin_) const{
   // Slab method for ray-AABB intersection
   double tmin = (bb_min_[0] - ray.origin_[0]) / ray.direction_[0];
@@ -115,7 +134,16 @@ bool BVH::intersectAABB(const Ray & ray, const vec4 & bb_min_, const vec4 & bb_m
   return tmax > 1e-5;  // Cull if farther than current closest hit
 }
 
-
+/**
+ * @brief Traverse BVH to find closest ray-triangle intersection
+ * @param ray Ray to test
+ * @param intersection_material Material at intersection (output)
+ * @param intersection_point Intersection point (output)
+ * @param intersection_normal Intersection normal (output)
+ * @param intersection_distance Intersection distance (input/output)
+ * @param nodeIdx Current BVH node index
+ * @return true if intersection found
+ */
 bool BVH::intersectBVH(const Ray& ray,
                        Material& intersection_material,
                        vec4 &intersection_point,
@@ -185,6 +213,10 @@ bool BVH::intersectBVH(const Ray& ray,
 // Private Methods - AoS Version
 // =============================================================================
 
+/**
+ * @brief Extract triangle data from meshes into flat array
+ * @param meshes Vector of mesh pointers
+ */
 void BVH::getData(std::vector<Mesh*> &meshes){
   meshes_ = meshes;
   int i = 0;
@@ -204,6 +236,10 @@ void BVH::getData(std::vector<Mesh*> &meshes){
   }
 }
 
+/**
+ * @brief Compute bounding box for a BVH node
+ * @param nodeIdx Node index
+ */
 void BVH::updateNodeBounds(int nodeIdx){
   BVHNode& node = bvhNodes_[nodeIdx];
   node.bb_min_ = vec4(DBL_MAX);
@@ -222,7 +258,11 @@ void BVH::updateNodeBounds(int nodeIdx){
   }
 }
 
-
+/**
+ * @brief Recursively subdivide BVH node
+ * @param nodeIdx Node index
+ * @param depth Current recursion depth
+ */
 void BVH::subdivide(int nodeIdx, int depth){
   BVHNode& node = bvhNodes_[nodeIdx];
 
@@ -259,6 +299,13 @@ void BVH::subdivide(int nodeIdx, int depth){
   subdivide(rightChildIdx, depth + 1);
 }
 
+/**
+ * @brief Partition triangles around split position
+ * @param nodeIdx Node index
+ * @param splitPos Split position along axis
+ * @param axis Split axis (0=x, 1=y, 2=z)
+ * @param i Partition index (input/output)
+ */
 void BVH::inplace_partition(int nodeIdx, double splitPos, int axis, int & i){
   BVHNode & node = bvhNodes_[nodeIdx];
   int j = i + node.triCount_-1;
@@ -272,6 +319,12 @@ void BVH::inplace_partition(int nodeIdx, double splitPos, int axis, int & i){
   }
 }
 
+/**
+ * @brief Compute median centroid position for splitting
+ * @param axis Split axis (0=x, 1=y, 2=z)
+ * @param nodeIdx Node index
+ * @return Median value along axis
+ */
 double BVH::median(int axis, int nodeIdx) {
   BVHNode& node = bvhNodes_[nodeIdx];
   if (node.triCount_ <= 0) throw std::runtime_error("median: empty range");
@@ -285,6 +338,11 @@ double BVH::median(int axis, int nodeIdx) {
   return median_inplace(axis_pts);
 }
 
+/**
+ * @brief Compute median of array in-place
+ * @param a Array of values
+ * @return Median value
+ */
 double BVH::median_inplace(std::vector<double>& a) {
   const size_t n = a.size();
   const size_t mid = n / 2;
@@ -309,6 +367,11 @@ double BVH::median_inplace(std::vector<double>& a) {
 // =============================================================================
 
 #ifdef CUDA_ENABLED
+/**
+ * @brief Build BVH with SoA layout for GPU
+ * @param meshes Vector of mesh pointers
+ * @param data Pointer to SoA data structure
+ */
 void BVH::initSoA(std::vector<Mesh*> &meshes, Data* data)
 {
   std::cout << "Build BVH...";
@@ -342,6 +405,10 @@ void BVH::initSoA(std::vector<Mesh*> &meshes, Data* data)
   }
 }
 
+/**
+ * @brief Compute bounding box for a BVH node (SoA version)
+ * @param nodeIdx Node index
+ */
 void BVH::updateNodeBoundsSoA(int nodeIdx){
   d_bvhNodesSoA_->bb_min_[nodeIdx] = vec4(DBL_MAX);
   d_bvhNodesSoA_->bb_max_[nodeIdx] = vec4(-DBL_MAX);
@@ -362,6 +429,12 @@ void BVH::updateNodeBoundsSoA(int nodeIdx){
     d_bvhNodesSoA_->bb_max_[nodeIdx] = fmax(d_bvhNodesSoA_->bb_max_[nodeIdx], v2);
   }
 }
+
+/**
+ * @brief Recursively subdivide BVH node (SoA version)
+ * @param nodeIdx Node index
+ * @param depth Current recursion depth
+ */
 void BVH::subdivideSoA(int nodeIdx, int depth){
 
   // Terminate recursion if node has few triangles
@@ -398,6 +471,13 @@ void BVH::subdivideSoA(int nodeIdx, int depth){
   subdivideSoA(rightChildIdx, depth + 1);
 }
 
+/**
+ * @brief Partition triangles around split position (SoA version)
+ * @param nodeIdx Node index
+ * @param splitPos Split position along axis
+ * @param axis Split axis (0=x, 1=y, 2=z)
+ * @param i Partition index (input/output)
+ */
 void BVH::inplace_partitionSoA(int nodeIdx, double splitPos, int axis, int& i){
   int j = i + d_bvhNodesSoA_->triCount_[nodeIdx]-1;
   // Partition using two-pointer approach
@@ -432,6 +512,12 @@ void BVH::inplace_partitionSoA(int nodeIdx, double splitPos, int axis, int& i){
   }
 }
 
+/**
+ * @brief Compute median centroid position for splitting (SoA version)
+ * @param axis Split axis (0=x, 1=y, 2=z)
+ * @param nodeIdx Node index
+ * @return Median value along axis
+ */
 double BVH::medianSoA(int axis, int nodeIdx) {
   if (d_bvhNodesSoA_->triCount_[nodeIdx] <= 0) throw std::runtime_error("median: empty range");
   if (axis < 0 || axis > 2) throw std::out_of_range("axis must be 0..2");

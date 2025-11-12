@@ -666,12 +666,12 @@ __device__ vec4 lighting_device(const vec4 &point,
     double dot_rv = reflection_device(point, normal, view, light_position);
     double reflection_ = dot_rv;
     // Compute specular exponent
-    // reflection_ = pow(reflection_, material.shininess);
-    double i = 0.0;
-    while (i < material.shininess - 1){
-      reflection_ *= dot_rv;
-      i += 1.0;
-    }
+    reflection_ = pow(reflection_, material.shininess);
+    // double i = 0.0;
+    // while (i < material.shininess - 1){
+    //   reflection_ *= dot_rv;
+    //   i += 1.0;
+    // }
 
     // Shadow calculation
     bool isShadow = false;

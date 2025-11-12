@@ -19,6 +19,9 @@
 #include "mytracer_gpu.h"
 #endif // CUDA_ENABLED
 
+/**
+ * @brief Destructor for Raytracer
+ */
 Raytracer::~Raytracer(){
   // clean up
   for (auto o : objects_) {
@@ -33,6 +36,10 @@ Raytracer::~Raytracer(){
 #endif
 }
 
+/**
+ * @brief Initialize raytracer for CPU execution
+ * @param filename Scene file path
+ */
 void Raytracer::init_cpu(const std::string &filename){
   // reads scene and build BVH
   read_scene(filename);
@@ -40,6 +47,10 @@ void Raytracer::init_cpu(const std::string &filename){
 }
 
 #ifdef CUDA_ENABLED
+/**
+ * @brief Initialize raytracer for CUDA execution
+ * @param filename Scene file path
+ */
 void Raytracer::init_cuda(const std::string &filename){
   // pre read scene, read scene, build SoA, and build BVH
   pre_read_scene(filename);
@@ -48,6 +59,12 @@ void Raytracer::init_cuda(const std::string &filename){
   bvh.initSoA(meshes_, data_);
 }
 
+/**
+ * @brief Allocate or reallocate CUDA device memory
+ * @param new_bytes Requested size in bytes
+ * @param old_bytes Current allocation size
+ * @param ptr Pointer to device memory
+ */
 void Raytracer::allocate(size_t new_bytes, size_t &old_bytes, void* &ptr){
   // (re)allocate only if size changed
   if (new_bytes != old_bytes) {
@@ -62,6 +79,9 @@ void Raytracer::allocate(size_t new_bytes, size_t &old_bytes, void* &ptr){
   }
 }
 
+/**
+ * @brief Prepare device resources for CUDA rendering
+ */
 void Raytracer::prepareDeviceResources() {
 
   // allocate nPixels
@@ -79,6 +99,9 @@ void Raytracer::prepareDeviceResources() {
   copyLights(); // from std::vector
 }
 
+/**
+ * @brief Copy light data from host to device
+ */
 void Raytracer::copyLights(){
   nLights = lights_.size();
   size_t nBytes = nLights * sizeof(vec4);
@@ -94,6 +117,9 @@ void Raytracer::copyLights(){
   free(lightColor);
 }
 
+/**
+ * @brief Compute raytraced image using CUDA
+ */
 void Raytracer::compute_image_cuda(){
 
   std::cout << "Raytracer::compute_image_cuda()..." ;
