@@ -1,8 +1,8 @@
 # My Ray Tracer
 CPU and CUDA implementations of a ray tracer with BVH acceleration
 
-## Note ⚠️
-This repository is based on the course *Computer Graphics (Graphische Datenverarbeitung)* at the Computer Graphics Group, TU Dortmund. The official exercise codebase is **copyrighted** by the **Computer Graphics Group, TU Dortmund** and **is not included** in this repository. All code in this repository is my own implementation.
+## Note 
+⚠️ This repository is based on the course *Computer Graphics (Graphische Datenverarbeitung)* at the Computer Graphics Group, TU Dortmund. The official exercise codebase is **copyrighted** by the **Computer Graphics Group, TU Dortmund** and **is not included** in this repository. All code in this repository is my own implementation.
 
 ## Benchmarks
 | Backend | Scene  | Resolution | SPP | Time  | Hardware                                      | Notes                                      |
