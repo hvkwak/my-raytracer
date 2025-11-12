@@ -1,15 +1,17 @@
 // ============================================================================
-// Computer Graphics(Graphische Datenverarbeitung) - TU Dortmund
-// Implementation by Hyovin Kwak (Instructor: Prof. Dr. Mario Botsch)
+// Solutions/Implementations by Hyovin Kwak to the course
+// Computer Graphics @ TU Dortmund (Instructor: Prof. Dr. Mario Botsch)
 //
-// This file contains my solutions to the course exercises.
-// Note: The original exercise framework/codebase is not published in this repo.
+// Note: The original exercise codebase is not included in this repo.
 // ============================================================================
 
 #ifdef CUDA_ENABLED
 #include "common/common.h"
 #include <cuda_runtime.h>
+#include "mytracer_gpu.h"
+#include "myutils_gpu.h"
 #endif // CUDA_ENABLED
+
 #include <stdio.h>
 #include <ctime>
 #include <cfloat>
@@ -20,10 +22,8 @@
 #include "utils/Camera.h"
 #include "utils/Ray.h"
 #include "utils/Image.h"
-#include "mytracer_gpu.h"
 #include "mydata.h"
 #include "mybvh.h"
-#include "myutils_gpu.h"
 
 //=============================================================================
 // functions from host
@@ -39,25 +39,24 @@ void init_device(void){
 }
 
 /**
- * @brief C++ wrapper to launch compute_image_device kernel
- * This function can be called from regular C++ code (like mytracer.cpp)
+ * @brief launches compute_image_device kernel
  */
 void launch_compute_image_device(vec4* d_pixels,
-                                  vec4* d_tmpPixels,
+                                 vec4* d_tmpPixels,
                                  vec4* d_image,
-                                  int width,
-                                  int height,
-                                  const Camera& camera,
-                                  const vec4* d_lightsPos,
-                                  const vec4* d_lightsColor,
-                                  int nLights,
-                                  const vec4& background,
-                                  const vec4& ambience,
-                                  int max_depth,
-                                  const Data* data,
-                                  const BVH::BVHNodes_SoA* bvhNodes)
+                                 const int& width,
+                                 const int& height,
+                                 const Camera& camera,
+                                 const vec4* d_lightsPos,
+                                 const vec4* d_lightsColor,
+                                 const int& nLights,
+                                 const vec4& background,
+                                 const vec4& ambience,
+                                 const int& max_depth,
+                                 const Data* data,
+                                 const BVH::BVHNodes_SoA* bvhNodes)
 {
-  int nThreads = 16;
+  int nThreads = 8;
   dim3 block(nThreads, nThreads);
   dim3 grid((width + block.x - 1) / block.x, (height + block.y - 1) / block.y);
 
@@ -245,11 +244,7 @@ __device__ vec4 trace_device(const Ray &ray,
                              const Data *data,
                              const BVH::BVHNodes_SoA *bvhNodes)
 {
-  // check if max_depth is correct: has to be minimum 2
   vec4 color(0.0, 0.0, 0.0);
-  if (max_depth < 1) {
-    return color;
-  }
 
   // Initial Intersection
   Material material;
@@ -266,6 +261,7 @@ __device__ vec4 trace_device(const Ray &ray,
   {
     return background;
   }
+
   color += (1.0 - material.mirror) * lighting_device(intersection_point,
                                                      intersection_normal,
                                                      -ray.direction_,
@@ -278,11 +274,11 @@ __device__ vec4 trace_device(const Ray &ray,
                                                      lightsColor,
                                                      nLights);
 
-  int i = 0;
+  int depth = 0;
   double accumulated_weight = material.mirror;
   const double epsilon = 1e-4;
   vec4 v = reflect(ray.direction_, intersection_normal);
-  while (i < max_depth) {
+  while (depth < max_depth) {
     Ray reflected_ray = Ray(intersection_point + epsilon * v, v);
     // see if reflected ray intersects scene
     if (!intersect_scene_device(reflected_ray,
@@ -310,7 +306,7 @@ __device__ vec4 trace_device(const Ray &ray,
                                                                              nLights));
     v = reflect(reflected_ray.direction_, intersection_normal);
     accumulated_weight *= material.mirror;
-    i++;
+    depth++;
   }
   return color;
 }
@@ -331,6 +327,16 @@ __device__ bool intersect_scene_device(const Ray & ray,
   return (tmin < DBL_MAX);
 }
 
+/**
+ * @brief Traverse BVH and find closest ray-triangle intersection (SoA version)
+ * @param ray The ray to test
+ * @param intersection_material Material at intersection point (output)
+ * @param intersection_point Intersection point (output)
+ * @param intersection_normal Normal at intersection (output)
+ * @param intersection_distance Distance to intersection (input/output)
+ * @param nodeIdx Current BVH node index
+ * @return true if intersection found closer than intersection_distance
+ */
 __device__ bool intersectBVH_device(const Ray &ray,
                                     const Data *data,
                                     const BVH::BVHNodes_SoA *bvhNodes,
@@ -361,7 +367,7 @@ __device__ bool intersectBVH_device(const Ray &ray,
 
     // Early exit if ray doesn't intersect node's bounding box
     // if (!intersectAABB(ray, node.bb_min_, node.bb_max_, dummy)) {
-    if (!intersectAABB(ray, bb_min, bb_max, dummy)) {
+    if (!intersectAABB_device(ray, bb_min, bb_max, dummy)) {
       continue;
     }
 
@@ -430,12 +436,12 @@ __device__ bool intersectBVH_device(const Ray &ray,
       // Cache node data once
       vec4 bb_min_left = bvhNodes->bb_min_[leftChildIdx];
       vec4 bb_max_left = bvhNodes->bb_max_[leftChildIdx];
-      bool hitLeft = intersectAABB(ray, bb_min_left, bb_max_left, tminLeft);
+      bool hitLeft = intersectAABB_device(ray, bb_min_left, bb_max_left, tminLeft);
       // bool hitLeft = intersectAABB(ray, bvhNodes_[node.leftChildIdx_].bb_min_, bvhNodes_[node.leftChildIdx_].bb_max_, tminLeft);
 
       vec4 bb_min_right = bvhNodes->bb_min_[leftChildIdx+1];
       vec4 bb_max_right = bvhNodes->bb_max_[leftChildIdx+1];
-      bool hitRight = intersectAABB(ray, bb_min_right, bb_max_right, tminRight);
+      bool hitRight = intersectAABB_device(ray, bb_min_right, bb_max_right, tminRight);
       // bool hitRight = intersectAABB(ray, bvhNodes_[node.leftChildIdx_+1].bb_min_, bvhNodes_[node.leftChildIdx_+1].bb_max_, tminRight);
 
       if (hitLeft && hitRight){
@@ -562,11 +568,13 @@ __device__ bool intersect_triangle_device(const vec4& p0,
   } else if(data->meshDrawMode_[meshId] == 1) {
     // Phong shading
     intersection_normal = alpha * vn0 + beta * vn1 + gamma * vn2;
+  }else{
+    printf("Invalid meshDrawMode_[meshId], meshId: %d, its shading mode: %d", meshId, data->meshDrawMode_[meshId]);
   }
   return true;
 }
 
-__device__ bool intersectAABB(const Ray & ray, const vec4 & bb_min_, const vec4 & bb_max_, double & tmin_){
+__device__ bool intersectAABB_device(const Ray & ray, const vec4 & bb_min_, const vec4 & bb_max_, double & tmin_){
 
   // TODO: check division with zero due to ray.direction_?
 
@@ -658,12 +666,12 @@ __device__ vec4 lighting_device(const vec4 &point,
     double dot_rv = reflection_device(point, normal, view, light_position);
     double reflection_ = dot_rv;
     // Compute specular exponent
-    reflection_ = pow(reflection_, material.shininess);
-    // double i = 0.0;
-    // while (i < material.shininess - 1){
-    //   reflection_ *= dot_rv;
-    //   i += 1.0;
-    // }
+    // reflection_ = pow(reflection_, material.shininess);
+    double i = 0.0;
+    while (i < material.shininess - 1){
+      reflection_ *= dot_rv;
+      i += 1.0;
+    }
 
     // Shadow calculation
     bool isShadow = false;
@@ -716,23 +724,3 @@ __device__ double reflection_device(const vec4 &point, const vec4 &normal, const
     }
     return 0.0;
 }
-
-
-
-// /**
-//  * @brief GPU version: Handle recursive ray tracing for reflections
-//  */
-// __device__ vec4 subtrace_device(const Ray &ray, const Material &material, const vec4 &point,
-//                                  const vec4 &normal, int depth, const Light *lights, int numLights,
-//                                  const Data &data, const vec4 &background, const vec4 &ambience,
-//                                  int max_depth) {
-//     if (material.mirror > 0.0) {
-//         vec4 v = reflect(ray.direction_, normal);
-//         const double epsilon = 1e-4;
-//         Ray reflected_ray = Ray(point + epsilon * v, v);
-//         return material.mirror * trace_device(reflected_ray, depth + 1, lights, numLights,
-//                                                data, background, ambience, max_depth);
-//     }
-//     return vec4(0.0, 0.0, 0.0);
-// }
-

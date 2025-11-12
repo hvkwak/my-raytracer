@@ -1,9 +1,8 @@
 // ============================================================================
-// Computer Graphics(Graphische Datenverarbeitung) - TU Dortmund
-// Implementation by Hyovin Kwak (Instructor: Prof. Dr. Mario Botsch)
+// Solutions/Implementations by Hyovin Kwak to the course
+// Computer Graphics @ TU Dortmund (Instructor: Prof. Dr. Mario Botsch)
 //
-// This file contains my solutions to the course exercises.
-// Note: The original exercise framework/codebase is not published in this repo.
+// Note: The original exercise codebase is not included in this repo.
 // ============================================================================
 
 #include "mybvh.h"
@@ -11,10 +10,12 @@
 #include <cfloat>
 #include <math.h>
 #include <vector>
+
 #ifdef CUDA_ENABLED
 #include <cuda_runtime.h>
 #include "common/common.h"
 #endif // CUDA_ENABLED
+
 // =============================================================================
 // Public Methods
 // =============================================================================
@@ -58,11 +59,12 @@ void BVH::init(std::vector<Mesh*> &meshes) {
     // Debug: print first 50 nodes
     // for (int i = 0; i < 50 && i < bvhNodes_.size(); i++) {
     //   BVHNode node = bvhNodes_.at(i);
-    //   std::cout << i << "-th Node"
-    //             << " bb_min_: " << node.bb_min_
-    //             << " bb_max_: " << node.bb_max_
-    //             << " leftChildIdx: " << node.leftChildIdx_
-    //             << " firstTriIdx: " << node.firstTriIdx_
+    //   std::cout << "============================\n"
+    //             << i << "-th Node\n"
+    //             << " bb_min_: " << node.bb_min_ << "\n"
+    //             << " bb_max_: " << node.bb_max_ << "\n"
+    //             << " leftChildIdx: " << node.leftChildIdx_ << "\n"
+    //             << " firstTriIdx: " << node.firstTriIdx_ << "\n"
     //             << " triCount: " << node.triCount_ << std::endl;
     // }
     std::cout << " done. \n" << std::flush;
@@ -324,37 +326,16 @@ void BVH::initSoA(std::vector<Mesh*> &meshes, Data* data)
     CHECK(cudaMallocManaged(&d_bvhNodesSoA_->leftChildIdx_, (2*triCount-1)* sizeof(int)));
     CHECK(cudaMallocManaged(&d_bvhNodesSoA_->firstTriIdx_, (2*triCount-1)* sizeof(int)));
 
-    // d_bvhNodesSoA_->bb_min_.resize(2*triCount-1, vec4(-DBL_MAX));
-    // d_bvhNodesSoA_->bb_max_.resize(2*triCount-1, vec4(DBL_MAX));
-    // d_bvhNodesSoA_->triCount_.resize(2*triCount-1, -1);
-    // d_bvhNodesSoA_->leftChildIdx_.resize(2*triCount-1, -1);
-    // d_bvhNodesSoA_->firstTriIdx_.resize(2*triCount-1, -1);
-
-    // bvhNodes_.resize(2*triCount-1);
-
     // Initialize root node
     d_bvhNodesSoA_->leftChildIdx_[rootNodeIdx_] = 0;
     d_bvhNodesSoA_->firstTriIdx_[rootNodeIdx_] = 0;
     d_bvhNodesSoA_->triCount_[rootNodeIdx_] = triCount;
-    // BVHNode & root = bvhNodes_[rootNodeIdx_];
-    // root.leftChildIdx_ = 0;
-    // root.firstTriIdx_ = 0;
-    // root.triCount_ = triCount;
     updateNodeBoundsSoA(rootNodeIdx_);
 
     // Build BVH recursively
     subdivideSoA(rootNodeIdx_, 1);
-
     isInitialized_ = true;
-    // Debug: print first 50 nodes
-    // for (int i = 0; i < 50; i++) {
-    //   std::cout << i << "-th Node"
-    //             << " bb_min_: " << d_bvhNodesSoA_->bb_min_.at(i)
-    //             << " bb_max_: " << d_bvhNodesSoA_->bb_max_.at(i)
-    //             << " leftChildIdx: " << d_bvhNodesSoA_->leftChildIdx_.at(i)
-    //             << " firstTriIdx: " << d_bvhNodesSoA_->firstTriIdx_.at(i)
-    //             << " triCount: " << d_bvhNodesSoA_->triCount_.at(i) << std::endl;
-    // }
+
     std::cout << " done. \n" << std::flush;
   } else {
     std::cout << "No mesh available. BVH build stopped." << std::endl;
@@ -382,10 +363,6 @@ void BVH::updateNodeBoundsSoA(int nodeIdx){
   }
 }
 void BVH::subdivideSoA(int nodeIdx, int depth){
-  // Debug output
-  // std::cout << "subdivide() depth: " << depth << ", "
-  //           << "nodeIdx: " << nodeIdx << ", "
-  //           << "node.triCount: " << d_bvhNodesSoA_->triCount_.at(nodeIdx) << std::endl;
 
   // Terminate recursion if node has few triangles
   if (d_bvhNodesSoA_->triCount_[nodeIdx] <= 2) return;
@@ -454,8 +431,6 @@ void BVH::inplace_partitionSoA(int nodeIdx, double splitPos, int axis, int& i){
     }
   }
 }
-
-
 
 double BVH::medianSoA(int axis, int nodeIdx) {
   if (d_bvhNodesSoA_->triCount_[nodeIdx] <= 0) throw std::runtime_error("median: empty range");

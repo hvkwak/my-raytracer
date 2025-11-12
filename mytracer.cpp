@@ -1,9 +1,8 @@
 // ============================================================================
-// Computer Graphics(Graphische Datenverarbeitung) - TU Dortmund
-// Implementation by Hyovin Kwak (Instructor: Prof. Dr. Mario Botsch)
+// Solutions/Implementations by Hyovin Kwak to the course
+// Computer Graphics @ TU Dortmund (Instructor: Prof. Dr. Mario Botsch)
 //
-// This file contains my solutions to the course exercises.
-// Note: The original exercise framework/codebase is not published in this repo.
+// Note: The original exercise codebase is not included in this repo.
 // ============================================================================
 
 #include "Raytracer.h"
@@ -13,6 +12,7 @@
 #include <sstream>
 #include <string>
 #include <map>
+
 #ifdef CUDA_ENABLED
 #include "common/common.h"
 #include <cuda_runtime.h>
@@ -105,7 +105,6 @@ void Raytracer::compute_image_cuda(){
   image_.resize(camera_.width_, camera_.height_);
 
   // launch kernel invoke kernel at host
-  double iStart = seconds();
   launch_compute_image_device(d_pixels_,
                               d_tmpPixels_,
                               d_image_,
@@ -130,9 +129,7 @@ void Raytracer::compute_image_cuda(){
       image_(x, y) = d_image_[y*camera_.width_ + x];
     }
   }
-  double iElaps = seconds() - iStart;
   std::cout << "done.\n";
-  std::cout << "Raytracer::compute_image_cuda()...done. Time elapsed " << iElaps << " sec. \n"  ;
 }
 
 /**
@@ -198,12 +195,12 @@ void Raytracer::build_Data(){
   for (Mesh* mesh : meshes_){
     /// Copy vertex data
     int vertexCount = mesh->vertices_.size();
-    int count = 0;
+    int vertices_count = 0;
     for (Vertex vertex : mesh->vertices_){
-      data_->vertexPos_[vbase+count] = vertex.position;
-      data_->vertexNormals_[vbase+count] = vertex.normal;
-      data_->vertexMeshId_[vbase+count] = meshIdx;
-      count++;
+      data_->vertexPos_[vbase+vertices_count] = vertex.position;
+      data_->vertexNormals_[vbase+vertices_count] = vertex.normal;
+      data_->vertexMeshId_[vbase+vertices_count] = meshIdx;
+      vertices_count++;
     }
     data_->firstVertex_[meshIdx] = vbase;
     data_->vertexCount_[meshIdx] = vertexCount;
@@ -218,21 +215,21 @@ void Raytracer::build_Data(){
     data_->textCoordCount_[meshIdx] = textureCount;
 
     /// Copy triangle indices
-    count = 0;
+    int triangle_count = 0; // COUNT reset to 0!
     for (Triangle triangle : mesh->triangles_){
-      data_->vertexIdx_[ibase+3*count] = (vbase + triangle.i0);
-      data_->vertexIdx_[ibase+3*count+1] = (vbase + triangle.i1);
-      data_->vertexIdx_[ibase+3*count+2] = (vbase + triangle.i2);
-      data_->textureIdx_[ibase+3*count] = (tbase + triangle.iuv0);
-      data_->textureIdx_[ibase+3*count+1] = (tbase + triangle.iuv1);
-      data_->textureIdx_[ibase+3*count+2] = (tbase + triangle.iuv2);
-      data_->normals_[ibase/3 + count] = (triangle.normal);
-      count++;
+      data_->vertexIdx_[ibase+3*triangle_count] = (vbase + triangle.i0);
+      data_->vertexIdx_[ibase+3*triangle_count+1] = (vbase + triangle.i1);
+      data_->vertexIdx_[ibase+3*triangle_count+2] = (vbase + triangle.i2);
+      data_->textureIdx_[ibase+3*triangle_count] = (tbase + triangle.iuv0);
+      data_->textureIdx_[ibase+3*triangle_count+1] = (tbase + triangle.iuv1);
+      data_->textureIdx_[ibase+3*triangle_count+2] = (tbase + triangle.iuv2);
+      data_->normals_[ibase/3 + triangle_count] = (triangle.normal);
+      triangle_count++;
     }
     data_->firstVertexIdx_[meshIdx] = ibase;
-    data_->vertexIdxCount_[meshIdx] = count*3;
+    data_->vertexIdxCount_[meshIdx] = triangle_count*3;
     data_->firstTextIdx_[meshIdx] = ibase;
-    data_->textIdxCount_[meshIdx] = count*3;
+    data_->textIdxCount_[meshIdx] = triangle_count*3;
 
     /// per-mesh texture upload into UM (one block per mesh)
     if (mesh->hasTexture_){
@@ -241,7 +238,6 @@ void Raytracer::build_Data(){
       data_->meshTexWidth_[meshIdx] = W;
       data_->meshTexHeight_[meshIdx] = H;
       data_->firstMeshTex_[meshIdx] = meshTexOffset;
-      data_->meshDrawMode_[meshIdx] = mesh->draw_mode_;
       for (int y = 0; y < H; ++y)
         for (int x = 0; x < W; ++x)
           data_->meshTexels_[meshTexOffset + y * size_t(W) + x] = mesh->texture_(x, y);
@@ -251,8 +247,10 @@ void Raytracer::build_Data(){
       data_->meshTexWidth_[meshIdx] = -1;
       data_->meshTexHeight_[meshIdx] = -1;
       data_->firstMeshTex_[meshIdx] = size_t(-1);
-      data_->meshDrawMode_[meshIdx] = -1;
     }
+
+    // meshDraw Mode: FLAT or PHONG
+    data_->meshDrawMode_[meshIdx] = mesh->draw_mode_;
 
     // add Material
     data_->materialAmbient_[meshIdx] = mesh->material_.ambient;
@@ -264,7 +262,7 @@ void Raytracer::build_Data(){
 
     // base increment
     vbase = vbase + vertexCount;
-    ibase = ibase + count*3;
+    ibase = ibase + triangle_count*3;
     tbase = tbase + textureCount;
     meshIdx++;
   }
@@ -283,7 +281,6 @@ void Raytracer::pre_read_scene(const std::string &filename)
   // init
   if (!data_){
     CHECK(cudaMallocManaged(&data_, sizeof(Data)));
-    std::cout << "data_ mallocManaged OK\n";
   }
 
   /// Pre-read variables reset
@@ -554,11 +551,6 @@ vec4 Raytracer::lighting(const vec4 &point, const vec4 &normal,
     double reflection_ = dot_rv;
     // Compute specular exponent
     reflection_ = std::pow(reflection_, material.shininess);
-    // double i = 0.0;
-    // while (i < material.shininess - 1){
-    //   reflection_ *= dot_rv;
-    //   i += 1.0;
-    // }
 
     // Shadow calculation
     bool isShadow = false;

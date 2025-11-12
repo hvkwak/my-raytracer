@@ -1,9 +1,8 @@
 // ============================================================================
-// Computer Graphics(Graphische Datenverarbeitung) - TU Dortmund
-// Implementation by Hyovin Kwak (Instructor: Prof. Dr. Mario Botsch)
+// Solutions/Implementations by Hyovin Kwak to the course
+// Computer Graphics @ TU Dortmund (Instructor: Prof. Dr. Mario Botsch)
 //
-// This file contains my solutions to the course exercises.
-// Note: The original exercise framework/codebase is not published in this repo.
+// Note: The original exercise codebase is not included in this repo.
 // ============================================================================
 
 #ifndef MYDATA_H
@@ -48,7 +47,6 @@ struct Data {
   double *textureCoordinatesU_ = nullptr; ///< U texture coordinates
   double *textureCoordinatesV_ = nullptr; ///< V texture coordinates
 
-
   // ===== Per-mesh metadata begins here (all [meshCount]) =====
   int* firstVertex_ = nullptr;     int* vertexCount_ = nullptr;
   int* firstVertexIdx_ = nullptr;  int* vertexIdxCount_ = nullptr;
@@ -56,10 +54,10 @@ struct Data {
   int* firstTextIdx_ = nullptr;    int* textIdxCount_ = nullptr;
 
   // per-mesh Texture (one allocation per mesh for texels)
-  vec4 *meshTexels_ = nullptr;  // [tMeshCount_] of pointers to [W*H] UM blocks
+  vec4 *meshTexels_ = nullptr;   // [tMeshCount_] of pointers to [W*H] UM blocks
   int *meshTexWidth_ = nullptr;  // [tMeshCount_]
   int *meshTexHeight_ = nullptr; // [tMeshCount_]
-  size_t* firstMeshTex_= nullptr;   // [tMeshCount_], start index into texels_ for each mesh
+  size_t* firstMeshTex_= nullptr;// [tMeshCount_], start index into texels_ for each mesh
 
   // draw mode: shading
   int *meshDrawMode_ = nullptr;

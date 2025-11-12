@@ -1,9 +1,8 @@
 // ============================================================================
-// Computer Graphics - TU Dortmund
-// Implementation by Hyovin Kwak (Instructor: Prof. Dr. Mario Botsch)
+// Solutions/Implementations by Hyovin Kwak to the course
+// Computer Graphics @ TU Dortmund (Instructor: Prof. Dr. Mario Botsch)
 //
-// This file contains my solutions to the course exercises.
-// Note: The original exercise framework/codebase is not published in this repo.
+// Note: The original exercise codebase is not included in this repo.
 // ============================================================================
 
 #pragma once

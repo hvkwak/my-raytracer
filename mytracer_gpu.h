@@ -1,9 +1,8 @@
 // ============================================================================
-// Computer Graphics - TU Dortmund
-// Implementation by Hyovin Kwak (Instructor: Prof. Dr. Mario Botsch)
+// Solutions/Implementations by Hyovin Kwak to the course
+// Computer Graphics @ TU Dortmund (Instructor: Prof. Dr. Mario Botsch)
 //
-// This file contains my solutions to the course exercises.
-// Note: The original exercise framework/codebase is not published in this repo.
+// Note: The original exercise codebase is not included in this repo.
 // ============================================================================
 
 #ifndef MYTRACER_GPU_H
@@ -24,15 +23,15 @@ void init_device();
 void launch_compute_image_device(vec4* d_pixels,
                                  vec4* d_tmpPixels,
                                  vec4* d_image,
-                                 int width,
-                                 int height,
+                                 const int& width,
+                                 const int& height,
                                  const Camera& camera,
                                  const vec4* d_lightsPos,
                                  const vec4* d_lightsColor,
-                                 int nLights,
+                                 const int& nLights,
                                  const vec4& background,
                                  const vec4& ambience,
-                                 int max_depth,
+                                 const int& max_depth,
                                  const Data* data,
                                  const BVH::BVHNodes_SoA* bvhNodes);
 
@@ -113,7 +112,7 @@ __device__ bool intersect_triangle_device(const vec4& p0,
                                           const int & meshId,
                                           const Data *data);
 
-__device__ bool intersectAABB(const Ray & ray, const vec4 & bb_min_, const vec4 & bb_max_, double & tmin_);
+__device__ bool intersectAABB_device(const Ray & ray, const vec4 & bb_min_, const vec4 & bb_max_, double & tmin_);
 
 __device__ vec4 lighting_device(const vec4 &point,
                                 const vec4 &normal,

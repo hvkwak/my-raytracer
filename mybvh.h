@@ -1,9 +1,8 @@
 // ============================================================================
-// Computer Graphics(Graphische Datenverarbeitung) - TU Dortmund
-// Implementation by Hyovin Kwak (Instructor: Prof. Dr. Mario Botsch)
+// Solutions/Implementations by Hyovin Kwak to the course
+// Computer Graphics @ TU Dortmund (Instructor: Prof. Dr. Mario Botsch)
 //
-// This file contains my solutions to the course exercises.
-// Note: The original exercise framework/codebase is not published in this repo.
+// Note: The original exercise codebase is not included in this repo.
 // ============================================================================
 
 #ifndef MYBVH_H
@@ -29,16 +28,6 @@ class BVH {
 
 public:
 
-#ifdef CUDA_ENABLED
-  // BVHNode attributes in SoA
-  struct BVHNodes_SoA {
-    vec4 *bb_min_ = nullptr;
-    vec4 *bb_max_ = nullptr;
-    int *leftChildIdx_ = nullptr;
-    int *firstTriIdx_ = nullptr;
-    int *triCount_ = nullptr;
-  };
-#endif
 
   BVH() = default;
   ~BVH();
@@ -56,6 +45,16 @@ public:
    * @param data Pointer to SoA data structure
    */
   void initSoA(std::vector<Mesh*> &meshes, Data* data);
+
+  struct BVHNodes_SoA {
+    vec4 *bb_min_ = nullptr;
+    vec4 *bb_max_ = nullptr;
+    int *leftChildIdx_ = nullptr;
+    int *firstTriIdx_ = nullptr;
+    int *triCount_ = nullptr;
+  };
+  BVHNodes_SoA * d_bvhNodesSoA_ = nullptr;
+  int d_bvhNodesSize = 0;
 #endif
 
   /**
@@ -90,27 +89,6 @@ public:
                     double &intersection_distance,
                     int nodeIdx) const;
 
-  // /**
-  //  * @brief Traverse BVH and find closest ray-triangle intersection (SoA version)
-  //  * @param ray The ray to test
-  //  * @param intersection_material Material at intersection point (output)
-  //  * @param intersection_point Intersection point (output)
-  //  * @param intersection_normal Normal at intersection (output)
-  //  * @param intersection_distance Distance to intersection (input/output)
-  //  * @param nodeIdx Current BVH node index
-  //  * @return true if intersection found closer than intersection_distance
-  //  */
-  // bool intersectBVHSoA(const Ray &ray,
-  //                       Material& intersection_material,
-  //                       vec4 &intersection_point,
-  //                       vec4 &intersection_normal,
-  //                       double &intersection_distance) const;
-
-#ifdef CUDA_ENABLED
-  BVHNodes_SoA * d_bvhNodesSoA_ = nullptr;
-  int d_bvhNodesSize = 0;
-#endif
-
 private:
 
   /**
@@ -125,8 +103,6 @@ private:
     int firstTriIdx_;        ///< First triangle index (for leaf nodes)
     int triCount_;           ///< Number of triangles (0 for internal nodes)
   };
-
-
 
   // ===== AoS-specific methods =====
 
@@ -150,6 +126,11 @@ private:
    */
   void inplace_partition(int nodeIdx, double splitPos, int axis, int& i);
 
+    /**
+   * @brief Compute median centroid position for splitting (AoS version)
+   */
+  double median(int axis, int nodeIdx);
+
   // ===== SoA-specific methods =====
 
 #ifdef CUDA_ENABLED
@@ -167,16 +148,7 @@ private:
    * @brief Partition triangles around split position (SoA version)
    */
   void inplace_partitionSoA(int nodeIdx, double splitPos, int axis, int & i);
-#endif
 
-  // ===== Splitting heuristics =====
-
-  /**
-   * @brief Compute median centroid position for splitting (AoS version)
-   */
-  double median(int axis, int nodeIdx);
-
-#ifdef CUDA_ENABLED
   /**
    * @brief Compute median centroid position for splitting (SoA version)
    */
@@ -189,7 +161,6 @@ private:
   double median_inplace(std::vector<double> &a);
 
   // ===== Data members =====
-
   std::vector<BVHNode> bvhNodes_;      ///< BVH node pool for AoS
   std::vector<Triangle*> triangles_;   ///< Triangle pointers (AoS version)
   std::vector<Mesh*> meshes_;          ///< Mesh pointers
