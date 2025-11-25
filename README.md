@@ -5,10 +5,10 @@ CPU and CUDA implementations of a ray tracer with BVH acceleration
 ⚠️ This repository is based on the course *Computer Graphics (Graphische Datenverarbeitung)* at the Computer Graphics Group, TU Dortmund. The official exercise codebase is **copyrighted** by the **Computer Graphics Group, TU Dortmund** and **is not included** in this repository. All code in this repository is my own implementation.
 
 ## Benchmarks
-| Backend      | Scene  | Resolution | SPP | Time    | Hardware                                   | Notes                         |
-|--------------|--------|------------|-----|---------|--------------------------------------------|-------------------------------|
-| CPU (OpenMP) | Office | 1920×1080  | 16  | ? s  | AMD Ryzen 5 5600X (6-core)                 | BVH (median split)            |
-| GPU (CUDA)   | Office | 1920×1080  | 16  | 5.6 s   | NVIDIA RTX A2000 (host: AMD Ryzen 5 5600X) | irregular access, deep stack  |
+| Backend     | Scene  | Resolution | SPP | Time   | Hardware                                   | Notes                        |
+|-------------+--------+------------+-----+--------+--------------------------------------------+------------------------------|
+| CPU(OpenMP) | Office | 1920×1080  |  16 | 5.3 s  | AMD Ryzen 5 5600X (6-core)                 | BVH (median split)           |
+| GPU(CUDA)   | Office | 1920×1080  |  16 | 5.6 s  | NVIDIA RTX A2000 (host: AMD Ryzen 5 5600X) | irregular access, deep stack |
 
 (SPP: Samples Per Pixel)
 
@@ -17,9 +17,9 @@ CPU and CUDA implementations of a ray tracer with BVH acceleration
 - 
 -->
 ## Updates
-- [2025-11-12] Implemented CUDA backend. The benchmark for the `Office` scene is ready.
+- [2025-11-12] Implemented CUDA backend. The benchmark for the `Office` scene is ready. 
 - [2025-11-04] Mesh and Triangle attributes use an `SoA` (Structure-of-Arrays) layout for coalesced memory access.
-- [2025-10-27] Implemented basic BVH with a median-split builder, which renders `10×` faster than the baseline with AABB-tests. (Rendering the `Office` scene at `1920×1080` takes **51.3 s** on an AMD Ryzen 5 5600X (6-core)) Ref: [jbikker](https://github.com/jbikker/bvh_article)
+- [2025-10-27] Implemented basic BVH with a median-split builder, which renders `10×` faster than the baseline with AABB-tests. (Rendering the `Office` scene at `1920×1080` takes **5.3 s** on an AMD Ryzen 5 5600X (6-core)) Ref: [jbikker](https://github.com/jbikker/bvh_article)
 - [2025-10-20] Implemented all TODOs in the course exercises (Phong lighting model, reflections, intersections, flat and Phong shading, textures, acceleration with axis-aligned bounding box (AABB-tests)) for ray tracing. All sample-solution images were reproduced.
 
 ## Outputs
