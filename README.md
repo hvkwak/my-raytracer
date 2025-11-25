@@ -5,10 +5,10 @@ CPU and CUDA implementations of a ray tracer with BVH acceleration
 ⚠️ This repository is based on the course *Computer Graphics (Graphische Datenverarbeitung)* at the Computer Graphics Group, TU Dortmund. The official exercise codebase is **copyrighted** by the **Computer Graphics Group, TU Dortmund** and **is not included** in this repository. All code in this repository is my own implementation.
 
 ## Benchmarks
-| Backend     | Scene  | Resolution | SPP | Time   | Hardware                                   | Notes                        |
-|-------------+--------+------------+-----+--------+--------------------------------------------+------------------------------|
-| CPU(OpenMP) | Office | 1920×1080  |  16 | 51.3 s | AMD Ryzen 5 5600X (6-core)                 | BVH (median split)           |
-| GPU(CUDA)   | Office | 1920×1080  |  16 | 5.6 s  | NVIDIA RTX A2000 (host: AMD Ryzen 5 5600X) | irregular access, deep stack |
+| Backend      | Scene  | Resolution | SPP | Time    | Hardware                                   | Notes                         |
+|--------------|--------|------------|-----|---------|--------------------------------------------|-------------------------------|
+| CPU (OpenMP) | Office | 1920×1080  | 16  | ? s  | AMD Ryzen 5 5600X (6-core)                 | BVH (median split)            |
+| GPU (CUDA)   | Office | 1920×1080  | 16  | 5.6 s   | NVIDIA RTX A2000 (host: AMD Ryzen 5 5600X) | irregular access, deep stack  |
 
 (SPP: Samples Per Pixel)
 
