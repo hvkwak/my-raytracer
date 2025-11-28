@@ -15,7 +15,7 @@
 #include <stdio.h>
 #include <ctime>
 #include <cfloat>
-#include <algorithm>
+//#include <algorithm>
 
 #include "utils/Material.h"
 #include "utils/vec4.h"
@@ -371,95 +371,23 @@ __device__ bool intersectBVH_device(const Ray &ray,
       continue;
     }
 
-    if (triCount > 0) {
-      // printf("triCount: %d \n", triCount); // probably one triangle?
-      // Leaf node - test all triangles (SoA data layout)
+    if (triCount > 0) { // Leaf node - test all triangles (SoA data layout)
       double t;
       vec4 p, n, d;
+      int meshId;
       for (int i = firstTriIdx; i < firstTriIdx + triCount; i++) {
-
-        // TODO: KEEPING THESE VARIABLES IS NO GOOD IDEA
-        // take i, give it to intersect_triangle_device
-        // let it handle them!
-
-        // Fetch vertex indices
-        int vi0 = data->vertexIdx_[i * 3];
-        int vi1 = data->vertexIdx_[i * 3 + 1];
-        int vi2 = data->vertexIdx_[i * 3 + 2];
-
-        // Fetch vertex positions and normals
-        vec4 vp0 = data->vertexPos_[vi0];
-        vec4 vp1 = data->vertexPos_[vi1];
-        vec4 vp2 = data->vertexPos_[vi2];
-        vec4 normal = data->normals_[i];
         // check if triangle intersects.
-        if (intersect_triangle_device(vp0, vp1, vp2,
-                                      normal,
-                                      vn0, vn1, vn2,
-                                      ray,
-                                      p, n, d, t, meshId, data))
-        {
-          if (t < intersection_distance)
-          {
-            // apply texture
-            vec4 vn0 = data->vertexNormals_[vi0];
-            vec4 vn1 = data->vertexNormals_[vi1];
-            vec4 vn2 = data->vertexNormals_[vi2];
-
-            // Fetch texture coordinates if available
-            int meshId = data->vertexMeshId_[vi0];
-            double u0 = 0, u1 = 0, u2 = 0;
-            double v0 = 0, v1 = 0, v2 = 0;
-            if (data->meshTexWidth_[meshId] != -1) { // hasTexture True
-              int iuv0 = data->textureIdx_[i * 3];
-              int iuv1 = data->textureIdx_[i * 3 + 1];
-              int iuv2 = data->textureIdx_[i * 3 + 2];
-              u0 = data->textureCoordinatesU_[iuv0];
-              u1 = data->textureCoordinatesU_[iuv1];
-              u2 = data->textureCoordinatesU_[iuv2];
-              v0 = data->textureCoordinatesV_[iuv0];
-              v1 = data->textureCoordinatesV_[iuv1];
-              v2 = data->textureCoordinatesV_[iuv2];
-            }
-
-            intersect_triangle_texture_device();
-            material.ambient = data->materialAmbient_[meshId];
-            material.mirror = data->materialMirror_[meshId];
-            material.shadowable = data->materialShadowable_[meshId];
-            material.diffuse = d; // d is correct, because it can be from texture.
-            material.specular = data->materialSpecular_[meshId];
-            material.shininess = data->materialShininess_[meshId];
-            intersection_point = p;
-            intersection_normal = n;
-            intersection_distance = t;
-            hit = true;
-          }
-        }else{
-
-        }
-
-
-        // Intersect triangle
-        if (intersect_triangle_device(vp0, vp1, vp2,
-                                      normal,
-                                      vn0, vn1, vn2,
-                                      u0, u1, u2,
-                                      v0, v1, v2,
-                                      ray,
-                                      p, n, d, t, meshId, data))
-        {
-          if (t < intersection_distance) {
-            material.ambient = data->materialAmbient_[meshId];
-            material.mirror = data->materialMirror_[meshId];
-            material.shadowable = data->materialShadowable_[meshId];
-            material.diffuse = d; // d is correct, because it can be from texture.
-            material.specular = data->materialSpecular_[meshId];
-            material.shininess = data->materialShininess_[meshId];
-            intersection_point = p;
-            intersection_normal = n;
-            intersection_distance = t;
-            hit = true;
-          }
+        if (intersect_triangle_device(i, ray, p, n, d, t, intersection_distance, meshId, data)){
+          material.ambient = data->materialAmbient_[meshId];
+          material.mirror = data->materialMirror_[meshId];
+          material.shadowable = data->materialShadowable_[meshId];
+          material.diffuse = d; // d is correct, because it can be from texture.
+          material.specular = data->materialSpecular_[meshId];
+          material.shininess = data->materialShininess_[meshId];
+          intersection_point = p;
+          intersection_normal = n;
+          intersection_distance = t;
+          hit = true;
         }
       } // for loop ends here
     } else {
@@ -502,114 +430,117 @@ __device__ bool intersectBVH_device(const Ray &ray,
  * All triangle data is passed as parameters rather than stored in a Triangle struct
  * This version is optimized for GPU-friendly memory layouts
  *
- * @param p0,p1,p2 Triangle vertex positions
- * @param n Face normal
- * @param vn0,vn1,vn2 Vertex normals
- * @param u0,u1,u2,v0,v1,v2 Texture coordinates
+ * @param i : triangle index
  * @param ray Ray to test
  * @param intersection_point Intersection point (output)
  * @param intersection_normal Normal at intersection (output)
  * @param intersection_diffuse Diffuse color at intersection (output)
  * @param intersection_distance Distance to intersection (output)
+ * @param current_best_distance Current Best Distance to intersection
  * @return true if ray intersects the triangle
  */
-
-__device__ void intersect_triangle_texture_device(const vec4& n,
-                                                  const vec4& vn0,
-                                                  const vec4& vn1,
-                                                  const vec4& vn2,
-                                                  const double& u0,
-                                                  const double& u1,
-                                                  const double& u2,
-                                                  const double& v0,
-                                                  const double& v1,
-                                                  const double& v2,
-                                                  vec4 &intersection_diffuse,
-                                                  const int & meshId,
-                                                  const Data *data
-{
-  // Apply texture if available
-  if (data->meshTexWidth_[meshId] != -1){
-    // Interpolate texture coordinates with barycentric weights
-    double u = alpha * u0 + beta * u1 + gamma * u2;
-    double v = alpha * v0 + beta * v1 + gamma * v2;
-
-    // Clamp to [0,1] range
-    u = fmin(fmax(u, 0.0), 1.0);
-    v = fmin(fmax(v, 0.0), 1.0);
-
-    // Map to texture pixel coordinates
-    const unsigned int W = data->meshTexWidth_[meshId];
-    const unsigned int H = data->meshTexHeight_[meshId];
-    int px = (int)round(u * (W - 1));
-    int py = (int)round((1.0 - v) * (H - 1));
-    size_t meshTexOffset = data->firstMeshTex_[meshId];
-    vec4 texture = data->meshTexels_[meshTexOffset + py * size_t(W) + px]; // texture at (px, py)
-    intersection_diffuse = texture;
-  }
-}
-
-__device__ bool intersect_triangle_device(const vec4& p0,
-                                          const vec4& p1,
-                                          const vec4& p2,
-                                          const vec4& n,
-                                          const vec4& vn0,
-                                          const vec4& vn1,
-                                          const vec4& vn2,
+__device__ bool intersect_triangle_device(const int &i,
                                           const Ray &ray,
                                           vec4 &intersection_point,
                                           vec4 &intersection_normal,
                                           vec4 &intersection_diffuse,
                                           double &intersection_distance,
-                                          const int & meshId,
+                                          const double &current_best_distance,
+                                          int & meshId,
                                           const Data * data)
 {
-  intersection_diffuse = data->materialDiffuse_[meshId];
+  // Fetch vertex indices
+  int vi0 = data->vertexIdx_[i * 3];
+  int vi1 = data->vertexIdx_[i * 3 + 1];
+  int vi2 = data->vertexIdx_[i * 3 + 2];
+
+  // Fetch vertex positions and (vertex) normals
+  vec4 vp0 = data->vertexPos_[vi0];
+  vec4 vp1 = data->vertexPos_[vi1];
+  vec4 vp2 = data->vertexPos_[vi2];
 
   // Solve for barycentric coordinates and ray parameter t
-  // Same algorithm as AoS version
-  const vec4 column1 = {p0[0] - p2[0], p0[1] - p2[1], p0[2] - p2[2]};
-  const vec4 column2 = {p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]};
+  const vec4 column1 = {vp0[0] - vp2[0], vp0[1] - vp2[1], vp0[2] - vp2[2]};
+  const vec4 column2 = {vp1[0] - vp2[0], vp1[1] - vp2[1], vp1[2] - vp2[2]};
   const vec4 column3 = {-ray.direction_[0], -ray.direction_[1], -ray.direction_[2]};
-  const vec4 column4 = {ray.origin_[0] - p2[0], ray.origin_[1] - p2[1], ray.origin_[2] - p2[2]};
+  const vec4 column4 = {ray.origin_[0] - vp2[0], ray.origin_[1] - vp2[1], ray.origin_[2] - vp2[2]};
   const double S = det4D_device(column1, column2, column3);
-
-  // Check for degenerate triangle (determinant near zero)
-  if (fabs(S) < 1e-10)
-    return false;
-
-  const double alpha = det4D_device(column4, column2, column3) / S;
-  const double beta = det4D_device(column1, column4, column3) / S;
-  const double gamma = (1.0 - alpha - beta);
-  const double eps_shadow_acne = 1e-5;
 
   // check if t is correct: positive && beyond shadow acne
   const double t = det4D_device(column1, column2, column4) / S;
-  if (t <= eps_shadow_acne)
+  if (t <= 1e-5){ // eps_shadow_acne = 1e-5
     return false;
+  }
+
+  // Hit.
+  if (t > current_best_distance){ // better than current best?
+    return false;
+  }
 
   // check if it's inside
   bool isInside = true; // shadow acne guard
+  const double alpha = det4D_device(column4, column2, column3) / S;
+  const double beta = det4D_device(column1, column4, column3) / S;
+  const double gamma = (1.0 - alpha - beta);
   isInside = isInside && 0.0 <= alpha && alpha <= 1.0;
   isInside = isInside && 0.0 <= beta && beta <= 1.0;
   isInside = isInside && 0.0 <= gamma && gamma <= 1.0;
-  if (!isInside)
+  if (!isInside){
     return false;
+  }
 
-  // save intersection parameters
+  meshId = data->vertexMeshId_[vi0];
   intersection_distance = t;
   intersection_point = ray(t);
+  intersection_diffuse = data->materialDiffuse_[meshId];
 
   // Compute normal (flat or interpolated)
-  if (data->meshDrawMode_[meshId] == 0) {
-    // FLAT
+  if (data->meshDrawMode_[meshId] == 0) { // FLAT
     // intersection_normal = normalize(cross(p1 - p0, p2 - p0));
-    intersection_normal = n;
-  } else if(data->meshDrawMode_[meshId] == 1) {
-    // Phong shading
+    intersection_normal = data->normals_[i];
+  } else if (data->meshDrawMode_[meshId] == 1) { // Phong Shading
+    vec4 vn0 = data->vertexNormals_[vi0];
+    vec4 vn1 = data->vertexNormals_[vi1];
+    vec4 vn2 = data->vertexNormals_[vi2];
     intersection_normal = alpha * vn0 + beta * vn1 + gamma * vn2;
-  }else{
+  } else {
     printf("Invalid meshDrawMode_[meshId], meshId: %d, its shading mode: %d", meshId, data->meshDrawMode_[meshId]);
+  }
+
+  // Apply texture if available
+  if (data->meshTexWidth_[meshId] != -1) {
+
+    // Fetch texture coordinates if available
+    double u0 = 0, u1 = 0, u2 = 0;
+    double v0 = 0, v1 = 0, v2 = 0;
+    if (data->meshTexWidth_[meshId] != -1) { // hasTexture True
+      int iuv0 = data->textureIdx_[i * 3];
+      int iuv1 = data->textureIdx_[i * 3 + 1];
+      int iuv2 = data->textureIdx_[i * 3 + 2];
+      u0 = data->textureCoordinatesU_[iuv0];
+      u1 = data->textureCoordinatesU_[iuv1];
+      u2 = data->textureCoordinatesU_[iuv2];
+      v0 = data->textureCoordinatesV_[iuv0];
+      v1 = data->textureCoordinatesV_[iuv1];
+      v2 = data->textureCoordinatesV_[iuv2];
+
+      // Interpolate texture coordinates with barycentric weights
+      double u = alpha * u0 + beta * u1 + gamma * u2;
+      double v = alpha * v0 + beta * v1 + gamma * v2;
+
+      // Clamp to [0,1] range
+      u = fmin(fmax(u, 0.0), 1.0);
+      v = fmin(fmax(v, 0.0), 1.0);
+
+      // Map to texture pixel coordinates
+      const unsigned int W = data->meshTexWidth_[meshId];
+      const unsigned int H = data->meshTexHeight_[meshId];
+      int px = (int)round(u * (W - 1));
+      int py = (int)round((1.0 - v) * (H - 1));
+      size_t meshTexOffset = data->firstMeshTex_[meshId];
+      vec4 texture = data->meshTexels_[meshTexOffset + py * size_t(W) + px]; // texture at (px, py)
+      intersection_diffuse = texture;
+    }
   }
   return true;
 }
@@ -705,13 +636,9 @@ __device__ vec4 lighting_device(const vec4 &point,
     double diffuse_ = diffuse_device(point, normal, light_position);
     double dot_rv = reflection_device(point, normal, view, light_position);
     double reflection_ = dot_rv;
+
     // Compute specular exponent
     reflection_ = pow(reflection_, material.shininess);
-    // double i = 0.0;
-    // while (i < material.shininess - 1){
-    //   reflection_ *= dot_rv;
-    //   i += 1.0;
-    // }
 
     // Shadow calculation
     bool isShadow = false;

@@ -9,7 +9,7 @@
 #define MYTRACER_GPU_H
 
 #ifdef CUDA_ENABLED
-#include <vector>
+//#include <vector>
 #include "utils/Camera.h"
 #include "utils/vec4.h"
 #include "utils/Material.h"
@@ -203,33 +203,14 @@ __device__ bool intersectBVH_device(const Ray &ray,
  * @param data Scene data
  * @return true if intersection found
  */
-__device__ void intersect_triangle_texture_device(const vec4& n,
-                                                  const vec4& vn0,
-                                                  const vec4& vn1,
-                                                  const vec4& vn2,
-                                                  const double& u0,
-                                                  const double& u1,
-                                                  const double& u2,
-                                                  const double& v0,
-                                                  const double& v1,
-                                                  const double& v2,
-                                                  vec4 &intersection_diffuse,
-                                                  const int & meshId,
-                                                  const Data *data);
-
-__device__ bool intersect_triangle_device(const vec4& p0,
-                                          const vec4& p1,
-                                          const vec4& p2,
-                                          const vec4& n,
-                                          const vec4& vn0,
-                                          const vec4& vn1,
-                                          const vec4& vn2,
+__device__ bool intersect_triangle_device(const int& triIndex,
                                           const Ray &ray,
                                           vec4 &intersection_point,
                                           vec4 &intersection_normal,
                                           vec4 &intersection_diffuse,
                                           double &intersection_distance,
-                                          const int & meshId,
+                                          const double &current_best_distance,
+                                          int & meshId,
                                           const Data *data);
 
 /**

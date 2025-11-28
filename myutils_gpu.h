@@ -19,7 +19,7 @@
  * @param d Element at (1,1)
  * @return Determinant value
  */
-__forceinline__ __device__ double det2D_device(double a, double b, double c, double d){
+__device__ double det2D_device(double a, double b, double c, double d){
     return a*d - b*c;
 };
 
@@ -30,7 +30,7 @@ __forceinline__ __device__ double det2D_device(double a, double b, double c, dou
  * @param v3 Third column vector
  * @return Determinant value
  */
-__forceinline__ __device__ double det4D_device(const vec4 & v1, const vec4 & v2, const vec4 & v3){
+__device__ double det4D_device(const vec4 & v1, const vec4 & v2, const vec4 & v3){
     return v1[0] * det2D_device(v2[1], v3[1], v2[2], v3[2])
          - v2[0] * det2D_device(v1[1], v3[1], v1[2], v3[2])
          + v3[0] * det2D_device(v1[1], v2[1], v1[2], v2[2]);
