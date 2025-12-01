@@ -7,8 +7,8 @@ CPU and CUDA implementations of a ray tracer with BVH acceleration
 ## Benchmarks
 | Backend    | Scene  | Resolution | SPP | Time | Hardware                              | Notes                         |
 |----------- |--------|-----------|----|-----|----------------------------------------|-------------------------------|
-| CPU(OpenMP)| Office | 1920×1080  |  16 | 5.3s | AMD Ryzen 5 5600X (6-core)             | BVH (median split)            |
-| GPU(CUDA)  | Office | 1920×1080  |  16 | 5.31s | NVIDIA RTX A2000 (host: Ryzen 5 5600X) | irregular access, deep stack  |
+| CPU(OpenMP)| Office | 1920×1080  |  1 | 5.3s | AMD Ryzen 5 5600X (6-core)             | BVH (median split)            |
+| GPU(CUDA)  | Office | 1920×1080  |  1 | 5.31s | NVIDIA RTX A2000 (host: Ryzen 5 5600X) | irregular access, deep stack  |
 
 
 (SPP: Samples Per Pixel)
